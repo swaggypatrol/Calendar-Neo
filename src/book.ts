@@ -13,6 +13,38 @@ const DRAG_PX = 6;
 /** 书口两侧显示页边的最远范围（离今天的月数）。 */
 const HORIZON = 24;
 
+/** 页角被掀起时往上（或往下）拱起的高度，占页高的比例。 */
+const LIFT = 0.22;
+
+interface Pt {
+  x: number;
+  y: number;
+}
+
+const sub = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
+const dot = (a: Pt, b: Pt) => a.x * b.x + a.y * b.y;
+const len = (a: Pt) => Math.hypot(a.x, a.y);
+
+/** 用一条直线把多边形切开，留下 keep(点) >= 0 的那一半。 */
+function clipPoly(poly: Pt[], side: (p: Pt) => number): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const sa = side(a);
+    const sb = side(b);
+    if (sa >= 0) out.push(a);
+    if ((sa >= 0) !== (sb >= 0)) {
+      const t = sa / (sa - sb);
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return out;
+}
+
+const polyCss = (pts: Pt[]) =>
+  pts.length < 3 ? 'polygon(0 0, 0 0, 0 0)' : `polygon(${pts.map((p) => `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`).join(', ')})`;
+
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -46,18 +78,19 @@ const STYLE = /* css */ `
 }
 .book {
   position: relative;
-  display: grid;
-  grid-template-columns: auto auto;
-  justify-content: center;
   width: max-content;
   margin: 0 auto;
   padding: 10px 40px 30px;
-  perspective: 2200px;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
-.page, .face {
+.spread {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto;
+}
+.page, .turn {
   position: relative;
   box-sizing: border-box;
   padding: 16px 18px 14px;
@@ -65,8 +98,8 @@ const STYLE = /* css */ `
     radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(120, 90, 40, 0.05)),
     var(--hb-paper);
 }
-.page.left, .face.back { border-radius: 10px 2px 2px 10px; }
-.page.right, .face.front { border-radius: 2px 10px 10px 2px; }
+.shape-l { border-radius: 10px 2px 2px 10px; }
+.shape-r { border-radius: 2px 10px 10px 2px; }
 .page.left { box-shadow: var(--edges-left, none), -6px 14px 28px -10px var(--hb-shadow); }
 .page.right { box-shadow: var(--edges-right, none), 6px 14px 28px -10px var(--hb-shadow); }
 /* 中缝：靠近装订处的阴影 */
@@ -76,37 +109,40 @@ const STYLE = /* css */ `
   pointer-events: none;
   border-radius: inherit;
 }
-.page.left .gutter, .face.back .gutter { background: linear-gradient(to left, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
-.page.right .gutter, .face.front .gutter { background: linear-gradient(to right, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
-/* 翻页时：压在下面的那一页被翻起来的纸遮出的影子；翻着的纸面上随角度变化的明暗 */
-.shade, .light {
+.shape-l .gutter { background: linear-gradient(to left, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
+.shape-r .gutter { background: linear-gradient(to right, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
+/* 翻页时的光影：沿折线的一条渐变。页面上是被掀起的纸投下的影子，纸上是折起来的弧面的明暗 */
+.fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4000px;
+  transform-origin: 0 0;
+  visibility: hidden;
+}
+/* 翻着的那张纸：正面留在原处、沿折线裁掉折起来的部分；背面按折线镜像过去盖在上面 */
+.turn {
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+  transform-origin: 0 0;
+}
+.flip-on .turn { visibility: visible; }
+.flap {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border-radius: inherit;
-  opacity: 0;
-}
-.page.right .shade { background: linear-gradient(to right, rgba(0, 0, 0, 0.35), transparent 70%); }
-.page.left .shade { background: linear-gradient(to left, rgba(0, 0, 0, 0.35), transparent 70%); }
-.face.front .light { background: linear-gradient(to left, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.05)); }
-.face.back .light { background: linear-gradient(to right, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0.12)); }
-.sheet {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform-origin: 0 50%;
-  transform-style: preserve-3d;
-  visibility: hidden;
   z-index: 5;
+  filter: drop-shadow(0 0 7px rgba(0, 0, 0, 0.22));
 }
-.sheet.on { visibility: visible; }
-.face {
-  position: absolute;
-  inset: 0;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-.face.back { transform: rotateY(180deg); }
+.turn.front { z-index: 4; }
 .pool {
   position: absolute;
   left: -10000px;
@@ -199,11 +235,16 @@ highlighter-calendar {
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
 
+/**
+ * 一次翻页。几何都在"镜像坐标"里算：原点在中缝顶端，翻着的那页总是在右边 x∈[0,W]；
+ * 往前翻（dir=-1）时整个左右镜像一下。corner 是被掀起的页角，P 是页角现在被拉到的位置，
+ * 纸沿 C、P 连线的垂直平分线折过去。
+ */
 interface Flip {
   dir: 1 | -1;
-  /** 翻过去的程度 0..1。 */
-  p: number;
-  anim: { from: number; to: number; start: number; ms: number; ease: (t: number) => number } | null;
+  top: boolean;
+  P: Pt;
+  anim: { from: Pt; to: Pt; start: number; ms: number; ease: (t: number) => number; lift: number } | null;
 }
 
 /**
@@ -223,7 +264,7 @@ export class HighlighterBook extends HTMLElement {
   private $book: HTMLElement;
   private $left: HTMLElement;
   private $right: HTMLElement;
-  private $sheet: HTMLElement;
+  private $spread: HTMLElement;
   private $front: HTMLElement;
   private $back: HTMLElement;
   private $pool: HTMLElement;
@@ -257,13 +298,13 @@ export class HighlighterBook extends HTMLElement {
       <style>${STYLE}</style>
       <div class="book" part="book">
         <div class="tabs left"></div>
-        <div class="page left"><div class="slot"></div><div class="gutter"></div><div class="shade"></div></div>
-        <div class="page right"><div class="slot"></div><div class="gutter"></div><div class="shade"></div></div>
-        <div class="tabs right"></div>
-        <div class="sheet">
-          <div class="face front"><div class="slot"></div><div class="gutter"></div><div class="light"></div></div>
-          <div class="face back"><div class="slot"></div><div class="gutter"></div><div class="light"></div></div>
+        <div class="spread">
+          <div class="page left shape-l"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
+          <div class="page right shape-r"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
+          <div class="turn front"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
+          <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div></div>
         </div>
+        <div class="tabs right"></div>
         <button class="corner prev" type="button" aria-label="上一页"></button>
         <button class="corner next" type="button" aria-label="下一页"></button>
         <div class="pool" aria-hidden="true"></div>
@@ -272,9 +313,9 @@ export class HighlighterBook extends HTMLElement {
     this.$book = q('.book');
     this.$left = q('.page.left');
     this.$right = q('.page.right');
-    this.$sheet = q('.sheet');
-    this.$front = q('.face.front');
-    this.$back = q('.face.back');
+    this.$spread = q('.spread');
+    this.$front = q('.turn.front');
+    this.$back = q('.turn.back');
     this.$pool = q('.pool');
     this.$tabsL = q('.tabs.left');
     this.$tabsR = q('.tabs.right');
@@ -313,7 +354,7 @@ export class HighlighterBook extends HTMLElement {
   disconnectedCallback(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    if (this.flip) this.finishFlip(this.flip.p >= 0.5);
+    if (this.flip) this.finishFlip(this.progress(this.flip) >= 0.5);
     this.queue = [];
   }
 
@@ -420,7 +461,7 @@ export class HighlighterBook extends HTMLElement {
   /** 右页的页角翘起来抖两下，提示可以翻页。 */
   hint(): void {
     if (this.flip || this.gesture || this.hintRaf || !this.canFlip(1)) return;
-    this.beginFlip(1);
+    this.beginFlip(1, false);
     const t0 = performance.now();
     const tick = (now: number) => {
       const t = (now - t0) / 1000;
@@ -429,7 +470,10 @@ export class HighlighterBook extends HTMLElement {
         if (this.flip && !this.flip.anim) this.finishFlip(false);
         return;
       }
-      this.flip.p = 0.07 * Math.abs(Math.sin((t * Math.PI) / 0.34)) * Math.exp(-t * 2.4);
+      // 页角翘起来一点再落下，像被风掀了两下
+      const k = Math.abs(Math.sin((t * Math.PI) / 0.34)) * Math.exp(-t * 2.4);
+      const C = this.corner(this.flip);
+      this.flip.P = { x: C.x - 46 * k, y: C.y - 30 * k };
       this.render();
       this.hintRaf = requestAnimationFrame(tick);
     };
@@ -472,8 +516,8 @@ export class HighlighterBook extends HTMLElement {
       return;
     }
     if (!this.canFlip(dir)) return;
-    this.beginFlip(dir);
-    this.animateTo(1, fast ? RIFFLE_MS : FLIP_MS, fast ? easeOut : easeInOut);
+    this.beginFlip(dir, false);
+    this.animateTo(true, fast ? RIFFLE_MS : FLIP_MS, fast ? easeOut : easeInOut);
   }
 
   /** 把一页（日历元素）设成某个月；已经是这个月就不动它（保留手画的笔迹）。 */
@@ -488,13 +532,26 @@ export class HighlighterBook extends HTMLElement {
   }
 
   /**
-   * 开始翻一页。往后翻：右页那张纸（正面 m+1、背面 m+2）绕中缝往左翻，下面露出 m+3；
-   * 往前翻：左页那张纸（背面 m、正面 m-1）翻回右边，左边露出 m-2。
+   * 开始翻一页。往后翻：右页那张纸（这面 m+1、另一面 m+2）从页角掀起往左翻，下面露出 m+3；
+   * 往前翻：左页那张纸（这面 m、另一面 m-1）翻回右边，左边露出 m-2。
    */
-  private beginFlip(dir: 1 | -1): void {
-    // 翻着的那张纸和一页一样大，盖在右页上，绕中缝转
-    this.$sheet.style.width = `${this.$right.offsetWidth}px`;
-    this.$sheet.style.height = `${this.$right.offsetHeight}px`;
+  private beginFlip(dir: 1 | -1, top = false): void {
+    // 页上夹着的书签先收起来，翻完再按新的两页放
+    for (const r of this.shadowRoot!.querySelectorAll('.ribbon')) r.remove();
+    const W = this.$right.offsetWidth;
+    const H = this.$right.offsetHeight;
+    for (const el of [this.$front, this.$back]) {
+      el.style.width = `${W}px`;
+      el.style.height = `${H}px`;
+      el.style.transform = 'none';
+      el.style.clipPath = '';
+    }
+    // 正面在它原来那页的位置；背面按对面那页的样子排好，翻的时候再镜像过去
+    const [fl, bl] = dir > 0 ? [W, 0] : [0, W];
+    this.$front.style.left = `${fl}px`;
+    this.$back.style.left = `${bl}px`;
+    this.$front.className = `turn front ${dir > 0 ? 'shape-r' : 'shape-l'}`;
+    this.$back.className = `turn back ${dir > 0 ? 'shape-l' : 'shape-r'}`;
     const left = this.holder(this.$left).firstElementChild as HighlighterCalendar;
     const right = this.holder(this.$right).firstElementChild as HighlighterCalendar;
     const [a, b] = this.spare();
@@ -507,12 +564,14 @@ export class HighlighterBook extends HTMLElement {
     } else {
       this.setMonth(a, this.m - 1);
       this.setMonth(b, this.m - 2);
-      this.holder(this.$back).append(left);
-      this.holder(this.$front).append(a);
+      // 往前翻：留在原处的是左页（m），折过去露出来的是它的另一面（m-1）
+      this.holder(this.$front).append(left);
+      this.holder(this.$back).append(a);
       this.holder(this.$left).append(b);
     }
-    this.flip = { dir, p: 0, anim: null };
-    this.$sheet.classList.add('on');
+    this.flip = { dir, top, P: { x: W, y: top ? 0 : H }, anim: null };
+    this.flip.P = this.corner(this.flip);
+    this.$spread.classList.add('flip-on');
     this.$book.classList.add('busy');
     this.render();
   }
@@ -537,27 +596,66 @@ export class HighlighterBook extends HTMLElement {
     } else {
       if (done) {
         const oldRight = this.holder(this.$right).firstElementChild as HighlighterCalendar;
-        this.holder(this.$right).append(front);
-        this.$pool.append(oldRight, back);
+        this.holder(this.$right).append(back);
+        this.$pool.append(oldRight, front);
         this.m -= 2;
       } else {
         const under = this.holder(this.$left).firstElementChild as HighlighterCalendar;
-        this.holder(this.$left).append(back);
-        this.$pool.append(under, front);
+        this.holder(this.$left).append(front);
+        this.$pool.append(under, back);
       }
     }
     this.flip = null;
-    this.$sheet.classList.remove('on');
+    this.$spread.classList.remove('flip-on');
     this.$book.classList.remove('busy');
-    this.$left.querySelector<HTMLElement>('.shade')!.style.opacity = '0';
-    this.$right.querySelector<HTMLElement>('.shade')!.style.opacity = '0';
+    for (const s of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) s.style.visibility = 'hidden';
     this.layout();
     if (done) this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
   }
 
-  private animateTo(to: number, ms: number, ease: (t: number) => number): void {
+  /** 页宽、页高。 */
+  private get size(): { W: number; H: number } {
+    return { W: this.$right.offsetWidth || 1, H: this.$right.offsetHeight || 1 };
+  }
+
+  /** 被掀起的页角（镜像坐标）。 */
+  private corner(f: Flip): Pt {
+    const { W, H } = this.size;
+    return { x: W, y: f.top ? 0 : H };
+  }
+
+  /** 翻过去的程度 0..1：页角从原位（x=W）走到对面（x=-W）。 */
+  private progress(f: Flip): number {
+    const { W } = this.size;
+    return clamp01((W - f.P.x) / (2 * W));
+  }
+
+  /**
+   * 页角不能被拉得离书脊太远（纸是连在书脊上的）：离同侧书脊端点不超过页宽，
+   * 离另一端不超过对角线。
+   */
+  private constrain(f: Flip, P: Pt): Pt {
+    const { W, H } = this.size;
+    const near: Pt = { x: 0, y: f.top ? 0 : H };
+    const far: Pt = { x: 0, y: f.top ? H : 0 };
+    let q = P;
+    const d1 = len(sub(q, near));
+    if (d1 > W) q = { x: near.x + ((q.x - near.x) * W) / d1, y: near.y + ((q.y - near.y) * W) / d1 };
+    const diag = Math.hypot(W, H);
+    const d2 = len(sub(q, far));
+    if (d2 > diag) q = { x: far.x + ((q.x - far.x) * diag) / d2, y: far.y + ((q.y - far.y) * diag) / d2 };
+    return q;
+  }
+
+  /** 页角沿一条拱起来的弧线走到对面（done=true）或者落回原处。 */
+  private animateTo(done: boolean, ms: number, ease: (t: number) => number): void {
     const f = this.flip!;
-    f.anim = { from: f.p, to, start: performance.now(), ms, ease };
+    const { W, H } = this.size;
+    const C = this.corner(f);
+    const to = done ? { x: -W, y: C.y } : C;
+    // 走得越远拱得越高；从底角掀起往上拱，从顶角掀起往下拱
+    const lift = (f.top ? 1 : -1) * LIFT * H * Math.min(1, Math.abs(to.x - f.P.x) / (2 * W));
+    f.anim = { from: { ...f.P }, to, start: performance.now(), ms, ease, lift };
     if (!this.raf) this.raf = requestAnimationFrame(this.loop);
   }
 
@@ -567,37 +665,127 @@ export class HighlighterBook extends HTMLElement {
     if (!f?.anim) return;
     const a = f.anim;
     const t = clamp01((now - a.start) / a.ms);
-    f.p = a.from + (a.to - a.from) * a.ease(t);
+    const e = a.ease(t);
+    f.P = {
+      x: a.from.x + (a.to.x - a.from.x) * e,
+      y: a.from.y + (a.to.y - a.from.y) * e + a.lift * Math.sin(Math.PI * e),
+    };
     this.render();
     if (t < 1) {
       this.raf = requestAnimationFrame(this.loop);
       return;
     }
-    this.finishFlip(a.to === 1);
+    this.finishFlip(a.to.x < 0);
     // 排着队的翻页：一页接一页快速翻
     while (this.queue.length) {
       const dir = this.queue.shift()!;
       if (this.canFlip(dir)) {
-        this.beginFlip(dir);
-        this.animateTo(1, RIFFLE_MS, this.queue.length ? (x) => x : easeOut);
+        this.beginFlip(dir, false);
+        this.animateTo(true, RIFFLE_MS, this.queue.length ? (x) => x : easeOut);
         return;
       }
     }
   };
 
-  /** 按翻页进度摆好那张纸，并画出纸面明暗和压在下面那页上的影子。 */
+  /**
+   * 按页角的位置把纸折好：正面沿折线裁掉折起来的部分；背面（下一张纸的另一面）
+   * 镜像到折线另一侧盖上去；再沿折线画纸面的明暗和投在下面那页上的影子。
+   */
   private render(): void {
     const f = this.flip;
     if (!f) return;
-    const deg = f.dir > 0 ? -180 * f.p : -180 * (1 - f.p);
-    this.$sheet.style.transform = `rotateY(${deg}deg)`;
-    const s = Math.sin((Math.abs(deg) * Math.PI) / 180);
-    (this.$front.querySelector('.light') as HTMLElement).style.opacity = String(s * 0.9);
-    (this.$back.querySelector('.light') as HTMLElement).style.opacity = String(s * 0.7);
+    const { W, H } = this.size;
+    const C = this.corner(f);
+    const P = f.P;
+    const mir = (p: Pt): Pt => (f.dir > 0 ? p : { x: -p.x, y: p.y });
+    const frontOx = f.dir > 0 ? 0 : -W;
+    const backOx = f.dir > 0 ? -W : 0;
+    const d = sub(C, P);
+    const dl = len(d);
+    const rect: Pt[] = [
+      { x: 0, y: 0 },
+      { x: W, y: 0 },
+      { x: W, y: H },
+      { x: 0, y: H },
+    ];
+    if (dl < 0.5) {
+      // 还没掀起来
+      this.$front.style.clipPath = '';
+      this.$back.style.clipPath = polyCss([]);
+      for (const st of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) st.style.visibility = 'hidden';
+      return;
+    }
+    const n = { x: d.x / dl, y: d.y / dl };
+    const F = { x: (C.x + P.x) / 2, y: (C.y + P.y) / 2 };
+    const side = (p: Pt) => dot(sub(p, F), n);
+    const keep = clipPoly(rect, (p) => -side(p));
+    const fold = clipPoly(rect, side);
+
+    // 正面：只留没折起来的那部分
+    const toFront = (q: Pt): Pt => {
+      const r = mir(q);
+      return { x: r.x - frontOx, y: r.y };
+    };
+    this.$front.style.clipPath = polyCss(keep.map(toFront));
+
+    // 背面：纸上 q 点背后印的是对面那页 M(q) 位置的内容；它被折到 R(q)。
+    // 背面元素的局部坐标 → 屏幕：l → 版面位置 → 镜像坐标 → 先 M 再 R → 回到真实坐标
+    const reflect = (q: Pt): Pt => {
+      const k = 2 * side(q);
+      return { x: q.x - k * n.x, y: q.y - k * n.y };
+    };
+    const M = (q: Pt): Pt => ({ x: -q.x, y: q.y });
+    const toScreen = (l: Pt): Pt => {
+      const layout = { x: l.x + backOx, y: l.y };
+      return mir(reflect(M(mir(layout))));
+    };
+    const o = toScreen({ x: 0, y: 0 });
+    const ex = sub(toScreen({ x: 1, y: 0 }), o);
+    const ey = sub(toScreen({ x: 0, y: 1 }), o);
+    this.$back.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - backOx}, ${o.y})`;
+    const toBack = (q: Pt): Pt => {
+      const r = mir(M(q));
+      return { x: r.x - backOx, y: r.y };
+    };
+    this.$back.style.clipPath = polyCss(fold.map(toBack));
+
+    // 折线上的两个点（镜像坐标）
+    const along = { x: -n.y, y: n.x };
+    const A = { x: F.x - along.x * 2000, y: F.y - along.y * 2000 };
+    const B = { x: F.x + along.x * 2000, y: F.y + along.y * 2000 };
+    const p = this.progress(f);
+    const bend = Math.sin(Math.PI * Math.min(1, p * 1.15));
+    const flapW = Math.max(10, Math.min(dl / 2, W));
+
+    // 正面：靠近折线的地方因为纸拱起来而变暗
+    this.strip(this.$front, toFront(A), toFront(B), toFront(P), 26 + 30 * bend, `rgba(0,0,0,${(0.22 * bend + 0.05).toFixed(3)}), transparent`);
+    // 背面：弧面最高处一道亮光，往外慢慢变暗
+    this.strip(
+      this.$back,
+      toBack(A),
+      toBack(B),
+      toBack(C),
+      flapW * 0.8,
+      `rgba(255,255,255,${(0.28 * bend).toFixed(3)}), rgba(0,0,0,${(0.1 * bend).toFixed(3)}) 55%, transparent`,
+    );
+    // 下面那页：被掀起的纸投下的影子，贴着折线往外
     const under = f.dir > 0 ? this.$right : this.$left;
-    const other = f.dir > 0 ? this.$left : this.$right;
-    (under.querySelector('.shade') as HTMLElement).style.opacity = String(Math.abs(deg) < 90 ? s * 0.8 : 0);
-    (other.querySelector('.shade') as HTMLElement).style.opacity = String(Math.abs(deg) >= 90 ? s * 0.8 : 0);
+    this.strip(under, toFront(A), toFront(B), toFront(C), 18 + 50 * bend, `rgba(0,0,0,${(0.3 * bend).toFixed(3)}), transparent`);
+  }
+
+  /** 沿一条线（a→b，局部坐标）铺一条渐变，从线上往 inside 那一侧淡出。 */
+  private strip(host: HTMLElement, a: Pt, b: Pt, inside: Pt, width: number, stops: string): void {
+    const el = host.querySelector(':scope > .fx > .strip') as HTMLElement;
+    const d = sub(b, a);
+    const l = len(d) || 1;
+    const u = { x: d.x / l, y: d.y / l };
+    let nrm = { x: -u.y, y: u.x };
+    if (dot(sub(inside, a), nrm) < 0) nrm = { x: -nrm.x, y: -nrm.y };
+    const mid = { x: (a.x + b.x) / 2 - u.x * 2000, y: (a.y + b.y) / 2 - u.y * 2000 };
+    el.style.height = `${width}px`;
+    el.style.background = `linear-gradient(to bottom, ${stops})`;
+    el.style.transform = `matrix(${u.x}, ${u.y}, ${nrm.x}, ${nrm.y}, ${mid.x}, ${mid.y})`;
+    el.style.visibility = 'visible';
   }
 
   /** 按当前的 m 摆好左右两页、页边和书签。 */
@@ -751,13 +939,16 @@ export class HighlighterBook extends HTMLElement {
         return;
       }
       g.mode = 'drag';
-      this.beginFlip(dir);
+      // 按在页面上半部分就掀上面的角，下半部分就掀下面的角
+      const r = this.$spread.getBoundingClientRect();
+      this.beginFlip(dir, g.y < r.top + r.height / 2);
     }
     if (g.mode !== 'drag' || !this.flip) return;
-    // 纸边跟着手指：拖过一页多一点的距离就整页翻过去
-    const w = this.$right.getBoundingClientRect().width;
-    const along = this.flip.dir > 0 ? -dx : dx;
-    this.flip.p = clamp01(along / (w * 1.1));
+    // 页角跟着手指走（按手指移动的距离，不管从哪里按下去的）
+    const f = this.flip;
+    const C = this.corner(f);
+    const mdx = f.dir > 0 ? dx : -dx;
+    f.P = this.constrain(f, { x: C.x + mdx * 1.1, y: C.y + dy * 0.6 });
     this.render();
   }
 
@@ -770,9 +961,9 @@ export class HighlighterBook extends HTMLElement {
     const vx = e.timeStamp > s0.t ? (e.clientX - s0.x) / (e.timeStamp - s0.t) : 0;
     const f = this.flip;
     const along = f.dir > 0 ? -vx : vx;
-    const go = !cancelled && (f.p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
-    const to = go ? 1 : 0;
-    this.animateTo(to, Math.max(160, FLIP_MS * 0.7 * Math.abs(to - f.p)), easeOut);
+    const p = this.progress(f);
+    const go = !cancelled && (p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
+    this.animateTo(go, Math.max(180, FLIP_MS * 0.75 * (go ? 1 - p : p)), easeOut);
   }
 }
 
