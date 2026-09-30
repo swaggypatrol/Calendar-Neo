@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>预约日历 · Calendar Neo</title>
+    <link rel="stylesheet" href="/demo/style.css" />
+  </head>
+  <body>
+    <main>
+      <section class="intro">
+        <h1>预约日历</h1>
+        <p>给客户预约用：已经过去的日子灰掉，笔划过去也不会留墨、不会选中，只能约今天以后的日子。</p>
+        <ul>
+          <li><b>左键 / 手指划过</b>：涂色选中，一个日期被涂满 35/64 格就算约上。从上周一路划到下周也没关系，过去的那几天会被自动跳过。</li>
+          <li><b>右键划过</b>：橡皮擦，取消预约。</li>
+          <li><b>按住不动</b>：停在某天上够久，这一天会被一笔划过选中；按在今天和昨天中间，不会洇到昨天。</li>
+          <li><b>多个月</b>：在卡片空白处往右划，下个月从卡堆里滑出来；本月已经是最早的，往左划只会弹一下，不会翻回过去。点一下空白处收回成一叠。</li>
+        </ul>
+      </section>
+
+      <section class="stage">
+        <highlighter-deck id="cal" min="today"></highlighter-deck>
+
+        <div class="panel">
+          <div class="field">
+            <label>最早可约</label>
+            <div class="seg" id="min">
+              <button data-min="today" class="on">今天</button>
+              <button data-min="tomorrow">明天</button>
+              <button data-min="+3">3 天后</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>最多提前</label>
+            <div class="seg" id="max">
+              <button data-max="" class="on">不限</button>
+              <button data-max="+60">60 天</button>
+              <button data-max="+180">180 天</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>触屏工具</label>
+            <div class="seg" id="tool">
+              <button data-tool="highlight" class="on">荧光笔</button>
+              <button data-tool="erase">橡皮擦</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>颜色</label>
+            <div class="swatches" id="colors">
+              <button style="--c: #ffd21f" data-color="#ffd21f" class="on" aria-label="黄"></button>
+              <button style="--c: #7ef08a" data-color="#7ef08a" aria-label="绿"></button>
+              <button style="--c: #ff8fc8" data-color="#ff8fc8" aria-label="粉"></button>
+              <button style="--c: #7cc8ff" data-color="#7cc8ff" aria-label="蓝"></button>
+            </div>
+          </div>
+          <button id="clear" class="clear">全部清除</button>
+        </div>
+      </section>
+
+      <section class="out">
+        <h2>已约 <span id="count">0</span> 天</h2>
+        <p id="ranges" class="ranges">还没有选日期</p>
+        <pre id="json">[]</pre>
+      </section>
+    </main>
+    <script type="module" src="/demo/booking.ts"></script>
+  </body>
+</html>

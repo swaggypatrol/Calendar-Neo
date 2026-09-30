@@ -1,5 +1,6 @@
 import { DEFAULT_THRESHOLD, HighlighterEngine, type DayRect, type FlipEvent, type RowLayout, type Tool } from './engine';
 import { InkCanvas, type Run } from './ink';
+import { DayRange } from './range';
 
 export interface CalendarChangeDetail {
   /** 全部选中的日期，YYYY-MM-DD，升序。 */
@@ -84,6 +85,7 @@ header {
   cursor: pointer;
 }
 .nav:hover { background: var(--hc-line); }
+.nav:disabled { opacity: 0.2; cursor: default; background: transparent; }
 .hc.hide-nav .nav { visibility: hidden; }
 .nav:focus-visible { outline: 2px solid var(--hc-accent); }
 .weekdays {
@@ -131,6 +133,12 @@ canvas {
   outline: none;
 }
 .day.blank { box-shadow: none; }
+.day.disabled {
+  color: var(--hc-muted);
+  opacity: 0.5;
+  box-shadow: none;
+  background: repeating-linear-gradient(135deg, transparent 0 6px, var(--hc-line) 6px 7px);
+}
 .day.selected { font-weight: 650; }
 .day.today::after {
   content: '';
@@ -187,6 +195,7 @@ const TEMPLATE = `
  * 属性：month="2026-09"  threshold="35"  week-start="1|0"  locale="zh-CN"
  *       color="#ffd21f"  tool="highlight|erase"  brush-size="1"  hold-delay="320"
  *       value="2026-09-03,2026-09-04"
+ *       min="today"  max="+90"（可选范围：today / tomorrow / +N 天 / YYYY-MM-DD）
  * 事件：input（划的过程中每选中/取消一天触发）、change（松手后，若有变化）、monthchange
  */
 export class HighlighterCalendar extends HTMLElement {
@@ -201,9 +210,13 @@ export class HighlighterCalendar extends HTMLElement {
     'hold-delay',
     'value',
     'hide-nav',
+    'min',
+    'max',
   ];
 
   readonly engine = new HighlighterEngine();
+  /** 可选范围；范围外的日期灰掉，笔刷划过去不起作用。 */
+  readonly range = new DayRange();
 
   private ink: InkCanvas;
   private $title: HTMLElement;
@@ -212,6 +225,8 @@ export class HighlighterCalendar extends HTMLElement {
   private $grid: HTMLElement;
   private $canvas: HTMLCanvasElement;
   private $cursor: HTMLElement;
+  private $prev: HTMLButtonElement;
+  private $next: HTMLButtonElement;
 
   private year: number;
   private month0: number;
@@ -246,8 +261,11 @@ export class HighlighterCalendar extends HTMLElement {
     this.$grid = q('.grid');
     this.$canvas = q('canvas');
     this.$cursor = q('.cursor');
+    this.$prev = q('.prev');
+    this.$next = q('.next');
     this.ink = new InkCanvas(this.$canvas);
     this.engine.onFlip = (e) => this.handleFlip(e);
+    this.engine.isDisabled = (key) => !this.range.allows(key);
     this.ink.boost = !!this.dark?.matches;
     this.dark?.addEventListener('change', (e) => {
       this.ink.boost = e.matches;
@@ -258,8 +276,8 @@ export class HighlighterCalendar extends HTMLElement {
     this.year = now.getFullYear();
     this.month0 = now.getMonth();
 
-    q('.prev').addEventListener('click', () => this.shiftMonth(-1));
-    q('.next').addEventListener('click', () => this.shiftMonth(1));
+    this.$prev.addEventListener('click', () => this.shiftMonth(-1));
+    this.$next.addEventListener('click', () => this.shiftMonth(1));
     const w = this.$wrap;
     w.addEventListener('pointerdown', (e) => this.onDown(e));
     w.addEventListener('pointermove', (e) => this.onMove(e));
@@ -322,6 +340,11 @@ export class HighlighterCalendar extends HTMLElement {
       case 'value':
         this.value = (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
         break;
+      case 'min':
+      case 'max':
+        this.range.set(name, v);
+        this.applyRange();
+        break;
     }
   }
 
@@ -360,9 +383,30 @@ export class HighlighterCalendar extends HTMLElement {
   set month(v: string) {
     const m = /^(\d{4})-(\d{1,2})$/.exec(v);
     if (!m) return;
-    this.year = Number(m[1]);
-    this.month0 = Math.min(11, Math.max(0, Number(m[2]) - 1));
+    const k = this.clampMonth(Number(m[1]) * 12 + Math.min(11, Math.max(0, Number(m[2]) - 1)));
+    this.year = Math.floor(k / 12);
+    this.month0 = k % 12;
     this.render();
+  }
+
+  /** 最早可选的日期（YYYY-MM-DD），没有限制时为 null。 */
+  get min(): string | null {
+    return this.range.min;
+  }
+
+  set min(v: string | null) {
+    if (v === null) this.removeAttribute('min');
+    else this.setAttribute('min', v);
+  }
+
+  /** 最晚可选的日期（YYYY-MM-DD），没有限制时为 null。 */
+  get max(): string | null {
+    return this.range.max;
+  }
+
+  set max(v: string | null) {
+    if (v === null) this.removeAttribute('max');
+    else this.setAttribute('max', v);
   }
 
   /** 左键 / 触摸用的工具。右键和笔的橡皮头永远是橡皮擦。 */
@@ -399,17 +443,41 @@ export class HighlighterCalendar extends HTMLElement {
   }
 
   shiftMonth(delta: number): void {
-    const d = new Date(this.year, this.month0 + delta, 1);
-    this.year = d.getFullYear();
-    this.month0 = d.getMonth();
+    const cur = this.year * 12 + this.month0;
+    const k = this.clampMonth(cur + delta);
+    if (k === cur) return;
+    this.year = Math.floor(k / 12);
+    this.month0 = k % 12;
     this.render();
     this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
+  }
+
+  /** 翻月不能翻到整月都不可选的月份。 */
+  private clampMonth(k: number): number {
+    return Math.min(this.range.maxMonth, Math.max(this.range.minMonth, k));
+  }
+
+  /** min / max 变了：去掉范围外的已选日期，必要时翻到可选的月份。 */
+  private applyRange(): void {
+    const before = this.value;
+    this.engine.setSelection(before);
+    const cur = this.year * 12 + this.month0;
+    const k = this.clampMonth(cur);
+    this.year = Math.floor(k / 12);
+    this.month0 = k % 12;
+    this.render();
+    if (this.isConnected) this.emit('change', before);
   }
 
   // ---------- 渲染 ----------
 
   private render(): void {
+    // today 这类相对写法每次重画时重新换算，页面开过夜也不会错
+    this.range.refresh();
     const { year: y, month0: m } = this;
+    const k = y * 12 + m;
+    this.$prev.disabled = k <= this.range.minMonth;
+    this.$next.disabled = k >= this.range.maxMonth;
     const fmt = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'long' });
     this.$title.textContent = fmt.format(new Date(y, m, 1));
     this.$grid.setAttribute('aria-label', this.$title.textContent);
@@ -457,6 +525,10 @@ export class HighlighterCalendar extends HTMLElement {
         num.textContent = String(d);
         el.append(num);
         if (key === todayKey) el.classList.add('today');
+        if (!this.range.allows(key)) {
+          el.classList.add('disabled');
+          el.setAttribute('aria-disabled', 'true');
+        }
         this.dayEls.set(key, el);
       }
       this.cells.push(el);
@@ -465,7 +537,9 @@ export class HighlighterCalendar extends HTMLElement {
     this.syncDom();
 
     const keys = [...this.dayEls.keys()];
-    const first = keys.find((k) => this.engine.isSelected(k)) ?? (this.dayEls.has(todayKey) ? todayKey : keys[0]);
+    const first =
+      keys.find((k) => this.engine.isSelected(k)) ??
+      (this.dayEls.has(todayKey) && this.range.allows(todayKey) ? todayKey : keys.find((k) => this.range.allows(k)) ?? keys[0]);
     this.setFocusKey(first);
     this.measure(true);
   }
@@ -521,6 +595,7 @@ export class HighlighterCalendar extends HTMLElement {
     const b = this.cells[1].getBoundingClientRect();
     this.gap = Math.max(0, b.left - a.right);
     this.engine.setLayout(rows);
+    this.ink.setBlocked(rows.flatMap((r) => r.days).filter((d) => this.engine.disabled(d.key)));
     this.updateRuns();
 
     if (resized || force) {
@@ -772,6 +847,7 @@ export class HighlighterCalendar extends HTMLElement {
     const move = (days: number) => {
       const t = new Date(y, m - 1, d + days);
       const k = dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+      if (!this.range.allows(k)) return;
       if (t.getMonth() !== this.month0 || t.getFullYear() !== this.year) {
         this.shiftMonth(t.getFullYear() * 12 + t.getMonth() - (this.year * 12 + this.month0));
       }

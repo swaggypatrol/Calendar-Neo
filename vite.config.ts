@@ -2,7 +2,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(({ mode }) =>
   mode === 'demo'
-    ? { base: './', build: { outDir: 'demo-dist' } }
+    ? {
+        base: './',
+        build: { outDir: 'demo-dist', rollupOptions: { input: ['index.html', 'booking.html'] } },
+      }
     : {
         build: {
           lib: {

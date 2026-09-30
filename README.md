@@ -23,11 +23,22 @@
 
 所有卡片共享同一份选择。`<highlighter-deck>` 支持和 `<highlighter-calendar>` 一样的属性和事件，另有 `spread` 属性 / 特性、`spreadchange` 事件、`next(n)` / `prev(n)` 方法（等同于往右 / 往左划）。
 
+## 预约版：只能选未来
+
+给客户预约用时加上 `min="today"`：今天以前的日子灰掉，笔刷划过去不留墨、不会选中；从上周一路划到下周也没关系，过去的那几天自动跳过。卡片流翻不回过去的月份，到头再划只会弹一下。
+
+```html
+<highlighter-deck min="today" max="+90"></highlighter-deck>
+```
+
+`min` / `max` 可以写 `today`、`tomorrow`、`+N`（N 天后）或 `YYYY-MM-DD`。相对写法每次重画时按当天日期重新换算。`<highlighter-calendar>` 和 `<highlighter-deck>` 都支持；范围外的已选日期会被去掉并触发 `change`。
+
 ## 运行演示
 
 ```bash
 npm install
 npm run dev      # 打开 http://localhost:5173
+npm run dev:booking  # 预约版演示 http://localhost:5173/booking.html
 npm test         # 选择逻辑的单元测试
 npm run build    # 打包到 dist/
 ```
@@ -64,4 +75,5 @@ npm run build    # 打包到 dist/
 - `src/ink.ts`：笔触画面（刷毛、拉丝、叠加变深、淡出、自动补笔动画）。
 - `src/calendar.ts`：Web Component，把两者接到指针、键盘和日历网格上。
 - `src/deck.ts`：多月份卡片叠放 / 摊开。
-- `index.html` + `demo/`：演示页。
+- `src/range.ts`：可选范围（min / max）。
+- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：预约版演示页。

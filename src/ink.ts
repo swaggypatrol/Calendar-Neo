@@ -205,6 +205,8 @@ export class InkCanvas {
   private maskKey = '';
   private runs: Run[] = [];
   private pad = 4;
+  /** 不能选的日期格：墨水不会留在上面（像涂在蜡纸上）。 */
+  private blocked: Run[] = [];
 
   private live: BrushStroke | null = null;
   private liveTool: Tool | null = null;
@@ -266,6 +268,10 @@ export class InkCanvas {
   setRuns(runs: Run[], pad: number): void {
     this.runs = runs;
     this.pad = pad;
+  }
+
+  setBlocked(rects: Run[]): void {
+    this.blocked = rects;
   }
 
   beginLive(tool: Tool, x: number, y: number, t: number, half: number): void {
@@ -458,6 +464,15 @@ export class InkCanvas {
       d.drawImage(g.canvas, 0, 0);
     }
     d.globalAlpha = 1;
+    if (this.blocked.length) {
+      d.save();
+      d.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      d.globalCompositeOperation = 'destination-out';
+      d.beginPath();
+      for (const r of this.blocked) d.roundRect(r.left, r.top, r.right - r.left, r.bottom - r.top, 8);
+      d.fill();
+      d.restore();
+    }
     return this.busy;
   }
 

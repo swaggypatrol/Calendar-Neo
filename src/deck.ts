@@ -1,5 +1,6 @@
 import type { HighlighterCalendar } from './calendar';
 import type { Tool } from './engine';
+import { DayRange } from './range';
 
 /** 卡堆里每张卡露出来的偏移。 */
 const STACK_DX = 1.2;
@@ -11,6 +12,9 @@ const TILT = 48;
 /** 同时最多要露面的卡：左边飞出去的一张、三张摆开的、右边卡堆最上面一张。 */
 const POOL_SIZE = 6;
 const EPS = 1e-6;
+/** 翻到可选范围的尽头还往前划：整排跟着手指挪一点再弹回来。 */
+const BUMP_PX = 22;
+const BUMP_MS = 380;
 
 /** 手指横向移动多少像素算一次划动；一次按下只算一划，划多长都一样。 */
 const SWIPE_PX = 36;
@@ -37,6 +41,7 @@ const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
 /** ease 的斜率：动画播到一半切进转盘模式时，接过当时的速度，不会顿一下。 */
 const easeSlope = (t: number) => (t < 0.5 ? 12 * t * t : 3 * (2 - 2 * t) ** 2);
 const lerp = (x: number, y: number, t: number) => x + (y - x) * t;
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /**
  * 整条卡片流的状态。f 是摆在正中间的月份（月份序号 = 年 * 12 + 月），
@@ -133,7 +138,7 @@ highlighter-calendar.inert,
 .deck.busy highlighter-calendar { pointer-events: none; }
 `;
 
-const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay'];
+const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
 
 /**
  * <highlighter-deck>：像 iTunes 的 Cover Flow 一样的一条月份卡片流，最多同时摆开三个月。
@@ -169,6 +174,9 @@ export class HighlighterDeck extends HTMLElement {
   private shadows = new Map<HighlighterCalendar, string>();
   private navShown: boolean | null = null;
   private ro: ResizeObserver | null = null;
+  /** 可选范围（min / max）：流转不到整月都不可选的月份。 */
+  private range = new DayRange();
+  private bump: { dir: 1 | -1; start: number } | null = null;
 
   constructor() {
     super();
@@ -223,13 +231,20 @@ export class HighlighterDeck extends HTMLElement {
     } else if (name === 'spread') {
       // 只作为初始状态：一开始就摆开三个月
       const on = v !== null ? 1 : 0;
-      this.view = { ...this.view, a: on, b: on };
+      this.view = this.clampView({ ...this.view, a: on, b: on });
       this.settledView = { ...this.view };
       this.place();
     } else {
       for (const c of this.pool) {
         if (v === null) c.removeAttribute(name);
         else c.setAttribute(name, v);
+      }
+      if (name === 'min' || name === 'max') {
+        this.range.set(name, v);
+        // 卡片已经各自去掉了范围外的选择
+        this.selection = this.pool[0].value;
+        const f = this.tween?.to.f ?? this.spin?.snap ?? Math.round(this.view.f);
+        this.jump(f);
       }
     }
   }
@@ -268,7 +283,8 @@ export class HighlighterDeck extends HTMLElement {
     }
     const v = this.view;
     const t = on ? 1 : 0;
-    if (v.a !== t || v.b !== t) this.tweenTo({ f: v.f, a: t, b: t }, 0);
+    const to = this.clampView({ f: v.f, a: t, b: t });
+    if (v.a !== to.a || v.b !== to.b) this.tweenTo(to, 0);
   }
 
   get tool(): Tool {
@@ -345,8 +361,27 @@ export class HighlighterDeck extends HTMLElement {
 
   private step(dir: 1 | -1): void {
     const v = this.view;
-    if ((dir > 0 ? v.b : v.a) < 1) this.tweenTo(dir > 0 ? { ...v, b: 1 } : { ...v, a: 1 }, dir);
-    else this.tweenTo({ f: v.f + dir, a: 1, b: 1 }, dir);
+    const to = (dir > 0 ? v.b : v.a) < 1 ? (dir > 0 ? { ...v, b: 1 } : { ...v, a: 1 }) : { f: v.f + dir, a: 1, b: 1 };
+    if (!this.inRange(to)) {
+      this.bump = { dir, start: performance.now() };
+      this.kick();
+      return;
+    }
+    this.tweenTo(to, dir);
+  }
+
+  /** 摆出来的每张卡（最左 f-a 到最右 f+b）都在可选范围内。 */
+  private inRange(v: View): boolean {
+    this.range.refresh();
+    return v.f - v.a >= this.range.minMonth - EPS && v.f + v.b <= this.range.maxMonth + EPS;
+  }
+
+  /** 把一个状态收进可选范围：中间那张不越界，两边越界的就不摆开。 */
+  private clampView(v: View): View {
+    this.range.refresh();
+    const { minMonth: lo, maxMonth: hi } = this.range;
+    const f = Math.min(hi, Math.max(lo, v.f));
+    return { f, a: Math.min(v.a, Math.max(0, f - lo)), b: Math.min(v.b, Math.max(0, hi - f)) };
   }
 
   /** 点一下空白处：收回成一叠。转动中点一下就像按住转盘，就近停下再收。 */
@@ -366,7 +401,7 @@ export class HighlighterDeck extends HTMLElement {
     this.spin = null;
     this.pending = null;
     this.$deck.classList.remove('busy');
-    this.view = { f: k, a: Math.round(this.view.a), b: Math.round(this.view.b) };
+    this.view = this.clampView({ f: k, a: Math.round(this.view.a), b: Math.round(this.view.b) });
     this.settledView = { ...this.view };
     this.assigned.clear();
     this.place();
@@ -374,6 +409,7 @@ export class HighlighterDeck extends HTMLElement {
 
   private begin(): void {
     if (this.moving) return;
+    this.range.refresh();
     this.xOff = this.offscreenX();
     this.$deck.classList.add('busy');
   }
@@ -424,9 +460,11 @@ export class HighlighterDeck extends HTMLElement {
     this.raf = 0;
     const dt = this.lastT ? Math.min(0.05, (now - this.lastT) / 1000) : 1 / 60;
     this.lastT = now;
+    if (this.bump && now - this.bump.start >= BUMP_MS) this.bump = null;
     if (this.spin) this.stepSpin(dt);
     else if (this.tween) this.stepTween(now);
-    if (this.moving) this.kick();
+    else this.place();
+    if (this.moving || this.bump) this.kick();
     else this.lastT = 0;
   };
 
@@ -448,10 +486,7 @@ export class HighlighterDeck extends HTMLElement {
   private stepSpin(dt: number): void {
     const s = this.spin!;
     let { f, a, b } = this.view;
-    // 转起来的时候左右两边都摆开
-    const k = 1 - Math.exp(-SPIN.open * dt);
-    a = a + (1 - a) * k > 0.999 ? 1 : a + (1 - a) * k;
-    b = b + (1 - b) * k > 0.999 ? 1 : b + (1 - b) * k;
+    const { minMonth: lo, maxMonth: hi } = this.range;
     if (s.snap === null) {
       s.v *= Math.exp(-SPIN.damping * dt);
       f += s.v * dt;
@@ -459,16 +494,28 @@ export class HighlighterDeck extends HTMLElement {
       if (Math.abs(s.v) < SPIN.snapSpeed) {
         const rest = Math.round(f + s.v / SPIN.damping);
         const least = s.origin + s.dir * s.count;
-        s.snap = s.dir > 0 ? Math.max(rest, least) : Math.min(rest, least);
+        s.snap = Math.min(hi, Math.max(lo, s.dir > 0 ? Math.max(rest, least) : Math.min(rest, least)));
       }
     } else {
       const w = SPIN.spring;
       s.v += (-w * w * (f - s.snap) - 2 * w * s.v) * dt;
       f += s.v * dt;
     }
+    // 转到可选范围的尽头：撞墙停住
+    if (f < lo || f > hi) {
+      f = Math.min(hi, Math.max(lo, f));
+      s.v = 0;
+      s.snap = f;
+    }
+    // 转起来的时候左右两边都摆开；靠近范围尽头的那一边不摆开，不露出不可选的月份
+    const ta = clamp01(f - lo);
+    const tb = clamp01(hi - f);
+    const k = 1 - Math.exp(-SPIN.open * dt);
+    a = Math.min(Math.abs(a + (ta - a) * k - ta) < 0.001 ? ta : a + (ta - a) * k, Math.max(0, f - lo));
+    b = Math.min(Math.abs(b + (tb - b) * k - tb) < 0.001 ? tb : b + (tb - b) * k, Math.max(0, hi - f));
     this.view = { f, a, b };
-    if (s.snap !== null && Math.abs(f - s.snap) < 0.002 && Math.abs(s.v) < 0.05 && a === 1 && b === 1) {
-      this.view = { f: s.snap, a: 1, b: 1 };
+    if (s.snap !== null && Math.abs(f - s.snap) < 0.002 && Math.abs(s.v) < 0.05 && a === ta && b === tb) {
+      this.view = this.clampView({ f: s.snap, a: 1, b: 1 });
       this.spin = null;
       this.lastStep = { end: performance.now(), dir: s.dir };
       this.settle();
@@ -530,8 +577,11 @@ export class HighlighterDeck extends HTMLElement {
     if (!this.isConnected) return;
     const { f, a, b } = this.view;
     const step = this.pitch;
-    const lo = Math.ceil(f - a - 1 - EPS);
-    const hi = Math.floor(f + b + 1 + EPS);
+    // 整月都不可选的月份不发卡
+    const lo = Math.max(this.range.minMonth, Math.ceil(f - a - 1 - EPS));
+    const hi = Math.min(this.range.maxMonth, Math.floor(f + b + 1 + EPS));
+    const bump = this.bump ? Math.min(1, (performance.now() - this.bump.start) / BUMP_MS) : 1;
+    const nudge = bump < 1 ? this.bump!.dir * BUMP_PX * Math.sin(Math.PI * bump) * (1 - bump * 0.5) : 0;
 
     for (const [el, k] of this.assigned) if (k < lo || k > hi) this.assigned.delete(el);
     const taken = new Set(this.assigned.values());
@@ -576,7 +626,7 @@ export class HighlighterDeck extends HTMLElement {
           if (d > 1 + EPS) {
             opacity = 0;
           } else {
-            pile = 11 - m0Of(k);
+            pile = Math.max(0, Math.min(11 - m0Of(k), this.range.maxMonth - k));
             // 新一年的 1 月：上一年 12 月下面本来没有卡堆，滑出来时才淡入
             if (m0Of(k) === 0) opacity = Math.min(1, Math.max(0, 1 - d));
           }
@@ -586,7 +636,7 @@ export class HighlighterDeck extends HTMLElement {
         }
         el.style.zIndex = String(Math.round(100 - u * 10));
       }
-      el.style.transform = `translate(${x}px, ${y}px)${tilt ? ` rotateY(${tilt}deg)` : ''}`;
+      el.style.transform = `translate(${x + nudge}px, ${y}px)${tilt ? ` rotateY(${tilt}deg)` : ''}`;
       el.style.opacity = opacity < 1 ? String(opacity) : '';
       el.classList.toggle('hidden', opacity <= 0);
       el.classList.toggle('inert', !onTable || !rest);
