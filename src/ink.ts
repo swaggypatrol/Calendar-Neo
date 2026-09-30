@@ -170,6 +170,19 @@ interface Anim {
   duration: number;
 }
 
+/** 松笔后一段墨迹从原来的高度挪进窄带的动画（设备像素）。 */
+interface Settle {
+  slice: HTMLCanvasElement;
+  /** 落定时在这条带子底下垫一笔（css 像素），把挪进来的笔画之间的空隙补齐。 */
+  run: { left: number; right: number; cy: number; half: number };
+  x: number;
+  from: [number, number];
+  to: [number, number];
+  elapsed: number;
+}
+
+const SETTLE_MS = 380;
+
 interface Ghost {
   canvas: HTMLCanvasElement;
   alpha: number;
@@ -219,6 +232,7 @@ export class InkCanvas {
 
   private anims: Anim[] = [];
   private ghosts: Ghost[] = [];
+  private settles: Settle[] = [];
 
   constructor(private display: HTMLCanvasElement) {
     this.ink = layer(1, 1);
@@ -230,7 +244,7 @@ export class InkCanvas {
   }
 
   get busy(): boolean {
-    return this.live !== null || this.anims.length > 0 || this.ghosts.length > 0;
+    return this.live !== null || this.anims.length > 0 || this.ghosts.length > 0 || this.settles.length > 0;
   }
 
   /** 改尺寸会清空墨迹，调用方随后要重新补画选中日期。 */
@@ -245,12 +259,14 @@ export class InkCanvas {
     this.maskKey = '';
     this.anims = [];
     this.ghosts = [];
+    this.settles = [];
   }
 
   clear(): void {
     this.clearLayer(this.ink);
     this.anims = [];
     this.ghosts = [];
+    this.settles = [];
   }
 
   setColor(color: string): void {
@@ -275,6 +291,7 @@ export class InkCanvas {
   }
 
   beginLive(tool: Tool, x: number, y: number, t: number, half: number): void {
+    this.flushSettles();
     this.liveTool = tool;
     this.liveHalf = half;
     this.pooled = 0;
@@ -405,8 +422,80 @@ export class InkCanvas {
     c.restore();
   }
 
+  /**
+   * 松笔：每一段选中区域里的墨迹，按它实际涂到的上下范围，整体挪进这一行的窄带
+   * （cy 为中心、上下各 half），笔触的拉丝和深浅都保留，只是位置和高度变整齐。
+   */
+  settle(rows: (Run & { cy: number; half: number })[]): void {
+    this.flushSettles();
+    const c = this.ink.getContext('2d', { willReadFrequently: true })!;
+    for (const r of rows) {
+      const d = this.dpr;
+      const x0 = Math.max(0, Math.floor((r.left - this.pad) * d));
+      const x1 = Math.min(this.pw, Math.ceil((r.right + this.pad) * d));
+      const y0 = Math.max(0, Math.floor((r.top - this.pad) * d));
+      const y1 = Math.min(this.ph, Math.ceil((r.bottom + this.pad) * d));
+      if (x1 <= x0 || y1 <= y0) continue;
+      const img = c.getImageData(x0, y0, x1 - x0, y1 - y0);
+      const w = x1 - x0;
+      let top = -1;
+      let bottom = -1;
+      for (let y = 0; y < y1 - y0; y++) {
+        let hit = false;
+        for (let x = 0; x < w; x += 2) {
+          if (img.data[(y * w + x) * 4 + 3] > 28) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
+          if (top < 0) top = y;
+          bottom = y;
+        }
+      }
+      if (top < 0) continue;
+      const from: [number, number] = [y0 + top, y0 + bottom + 1];
+      const to: [number, number] = [(r.cy - r.half) * d, (r.cy + r.half) * d];
+      if (Math.abs(from[0] - to[0]) < 1.5 * d && Math.abs(from[1] - to[1]) < 1.5 * d) {
+        // 已经在带子里了：只垫一笔补齐空隙
+        this.underlay(r);
+        continue;
+      }
+      const slice = layer(w, from[1] - from[0]);
+      ctx2d(slice).drawImage(this.ink, x0, from[0], w, from[1] - from[0], 0, 0, w, from[1] - from[0]);
+      c.clearRect(x0, from[0], w, from[1] - from[0]);
+      this.settles.push({ slice, run: { left: r.left, right: r.right, cy: r.cy, half: r.half }, x: x0, from, to, elapsed: 0 });
+    }
+  }
+
+  /** 还没播完的落带动画直接落定（新的一笔开始前）。 */
+  private flushSettles(): void {
+    for (const s of this.settles) this.land(s);
+    this.settles = [];
+  }
+
+  /** 落定：挪好的笔画留在上面，底下垫一笔均匀的，整条带子看起来是一气呵成的。 */
+  private land(st: Settle): void {
+    const c = ctx2d(this.ink);
+    c.drawImage(st.slice, st.x, st.to[0], st.slice.width, st.to[1] - st.to[0]);
+    this.underlay(st.run);
+  }
+
+  private underlay(run: { left: number; right: number; cy: number; half: number }): void {
+    const { left, right, cy, half } = run;
+    const s = new BrushStroke(half);
+    const n = Math.max(2, Math.ceil((right - left + 6) / 2));
+    for (let i = 0; i <= n; i++) s.add(left - 3 + ((right - left + 6) * i) / n, cy + (0.5 - i / n) * half * 0.12, i);
+    s.ended = true;
+    this.commit(s, true);
+  }
+
   /** 画一帧，返回是否还需要继续动画。 */
   frame(dt: number): boolean {
+    // 挪到位的先落进墨迹层（这一帧就能画出垫在底下的那一笔）
+    for (const st of this.settles) st.elapsed += dt;
+    for (const st of this.settles.filter((x) => x.elapsed >= SETTLE_MS)) this.land(st);
+    this.settles = this.settles.filter((x) => x.elapsed < SETTLE_MS);
     for (const a of this.anims) a.elapsed += dt;
     const done = this.anims.filter((a) => a.elapsed >= a.duration);
     this.anims = this.anims.filter((a) => a.elapsed < a.duration);
@@ -421,6 +510,13 @@ export class InkCanvas {
     comp.clearRect(0, 0, this.pw, this.ph);
     comp.drawImage(this.ink, 0, 0);
     if (this.liveTool === 'highlight') comp.drawImage(this.poolLayer, 0, 0);
+    // 松笔后的笔画正在挪进窄带：先快后慢，最后一点点落稳
+    for (const st of this.settles) {
+      const e = 1 - (1 - Math.min(1, st.elapsed / SETTLE_MS)) ** 3;
+      const top = st.from[0] + (st.to[0] - st.from[0]) * e;
+      const bottom = st.from[1] + (st.to[1] - st.from[1]) * e;
+      comp.drawImage(st.slice, st.x, top, st.slice.width, bottom - top);
+    }
 
     if (this.live || this.anims.length) {
       this.clearLayer(this.scratch);
@@ -476,7 +572,8 @@ export class InkCanvas {
     return this.busy;
   }
 
-  private commit(stroke: BrushStroke): void {
+  /** 把一笔落进墨迹层。under=true 时垫在已有墨迹的下面。 */
+  private commit(stroke: BrushStroke, under = false): void {
     this.clearLayer(this.scratch);
     const s = ctx2d(this.scratch);
     s.save();
@@ -488,6 +585,7 @@ export class InkCanvas {
     c.save();
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.globalAlpha = PASS_ALPHA;
+    if (under) c.globalCompositeOperation = 'destination-over';
     c.drawImage(this.scratch, 0, 0);
     c.restore();
   }

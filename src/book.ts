@@ -161,7 +161,7 @@ highlighter-calendar {
 .tabs.left .tab { text-align: left; }
 .tab {
   position: absolute;
-  width: 34px;
+  width: 30px;
   border: 0;
   padding: 0 4px;
   font: 600 10px/1 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -176,6 +176,24 @@ highlighter-calendar {
 .tabs.right .tab { left: 0; border-radius: 0 6px 6px 0; }
 .tabs.left .tab { right: 0; border-radius: 6px 0 0 6px; }
 .tabs.right .tab:hover { transform: translateX(3px); }
+/* 正在看的月份：书签夹在这一页里，从页顶垂下来，尾巴剪成燕尾 */
+.ribbon {
+  position: absolute;
+  top: -5px;
+  width: 20px;
+  height: 50px;
+  box-sizing: border-box;
+  padding-top: 26px;
+  text-align: center;
+  font: 700 10px/1 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #3a2f12;
+  background: color-mix(in srgb, var(--hb-ink) 88%, #ffffff);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+.page.left .ribbon { left: 24px; }
+.page.right .ribbon { right: 24px; }
 .tabs.left .tab:hover { transform: translateX(-3px); }
 `;
 
@@ -222,7 +240,6 @@ export class HighlighterBook extends HTMLElement {
   private raf = 0;
   private hintRaf = 0;
   private selection: string[] = [];
-  private months = new Set<number>();
   private range = new DayRange();
   private gesture: {
     id: number;
@@ -613,31 +630,44 @@ export class HighlighterBook extends HTMLElement {
   private renderTabs(): void {
     this.$tabsL.innerHTML = '';
     this.$tabsR.innerHTML = '';
-    const lang = (this.getAttribute('locale') ?? navigator.language ?? 'en').toLowerCase();
-    const fmt = new Intl.DateTimeFormat(this.getAttribute('locale') ?? navigator.language, {
-      month: /^(zh|ja|ko)/.test(lang) ? 'numeric' : 'short',
-    });
-    const thisYear = new Date().getFullYear();
+    for (const r of this.shadowRoot!.querySelectorAll('.ribbon')) r.remove();
+    // 每个月选了几天
+    const counts = new Map<number, number>();
+    for (const d of this.selection) {
+      const k = monthIndex(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
     const h = this.$right.getBoundingClientRect().height || 360;
     const slotH = (h - 40) / 12;
     const used = new Map<string, number>();
-    for (const k of [...this.months].sort((a, b) => a - b)) {
-      const side = k <= this.m ? this.$tabsL : this.$tabsR;
-      const y = Math.floor(k / 12);
+    for (const [k, n] of [...counts].sort((a, b) => a[0] - b[0])) {
+      const label = n >= 5 ? '5+' : String(n);
+      const name = `${keyOf(k)}：${n} 天`;
+      if (k === this.m || k === this.m + 1) {
+        // 正在看的月份：书签夹进这一页，从页顶垂下来一截
+        const rib = document.createElement('div');
+        rib.className = 'ribbon';
+        rib.textContent = label;
+        rib.title = name;
+        (k === this.m ? this.$left : this.$right).append(rib);
+        continue;
+      }
+      // 翻过去的在左边书口，还没翻到的在右边书口，按月份排在不同高度
+      const side = k < this.m ? this.$tabsL : this.$tabsR;
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.className = 'tab';
-      const label = fmt.format(new Date(y, m0Of(k), 1));
-      tab.textContent = y === thisYear ? label : `${label}·${String(y).slice(2)}`;
-      tab.title = keyOf(k);
+      tab.textContent = label;
+      tab.title = name;
+      tab.setAttribute('aria-label', name);
       // 同一侧同一高度已经有书签（不同年份的同一个月）：往外再错开一点
       const spot = `${side === this.$tabsL ? 'l' : 'r'}${m0Of(k)}`;
-      const n = used.get(spot) ?? 0;
-      used.set(spot, n + 1);
+      const extra = used.get(spot) ?? 0;
+      used.set(spot, extra + 1);
       tab.style.top = `${12 + m0Of(k) * slotH}px`;
       tab.style.height = `${Math.max(16, Math.min(22, slotH - 4))}px`;
-      tab.style.marginLeft = side === this.$tabsR ? `${n * 8}px` : '';
-      tab.style.marginRight = side === this.$tabsL ? `${n * 8}px` : '';
+      tab.style.marginLeft = side === this.$tabsR ? `${extra * 8}px` : '';
+      tab.style.marginRight = side === this.$tabsL ? `${extra * 8}px` : '';
       tab.addEventListener('click', () => this.goTo(k));
       side.append(tab);
     }
@@ -662,7 +692,6 @@ export class HighlighterBook extends HTMLElement {
   }
 
   private selectionChanged(): void {
-    this.months = new Set(this.selection.map((d) => monthIndex(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1)));
     if (!this.flip) this.renderTabs();
   }
 

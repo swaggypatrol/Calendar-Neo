@@ -648,23 +648,27 @@ export class HighlighterCalendar extends HTMLElement {
     this.ink.setRuns(this.runs(), this.gap * 0.9 + 1);
   }
 
+  /**
+   * 笔迹最后落定的窄带：以日期数字为上下中心、高度是格子的 0.618。
+   * 画的时候可以涂在格子里任何地方，松手后笔画会自然地挪进这条带子，看起来整齐统一。
+   */
+  private band(r: { top: number; bottom: number }): { cy: number; half: number } {
+    return { cy: (r.top + r.bottom) / 2, half: (r.bottom - r.top) * 0.309 };
+  }
+
   /** 不带动画地给所有选中日期补上笔迹（翻月、改尺寸、程序设值时）。 */
   private paintStatic(): void {
     for (const run of this.runs()) {
-      const r = run.days[0];
-      const { ry } = this.engine.brushRadius(r);
-      const h = r.bottom - r.top;
-      const cy = (run.top + run.bottom) / 2 + (Math.random() - 0.5) * h * 0.06;
-      const rise = h * 0.03;
-      this.ink.sweep(run.left - 3, cy + rise / 2, run.right + 3, cy - rise / 2, ry, false);
+      const { cy, half } = this.band(run);
+      const rise = (run.bottom - run.top) * 0.03;
+      this.ink.sweep(run.left - 3, cy + rise / 2, run.right + 3, cy - rise / 2, half, false);
     }
   }
 
-  /** 自动划一笔穿过某天。dir=1 从左往右，-1 从右往左。 */
-  private sweepDay(r: DayRect, y: number, dir: 1 | -1, delay = 0): void {
-    const { ry } = this.engine.brushRadius(r);
+  /** 自动划一笔穿过某天（落在窄带里）。dir=1 从左往右，-1 从右往左。 */
+  private sweepDay(r: DayRect, _y: number, dir: 1 | -1, delay = 0): void {
+    const { cy: yc, half: ry } = this.band(r);
     const h = r.bottom - r.top;
-    const yc = Math.min(r.bottom - ry * 0.8, Math.max(r.top + ry * 0.8, y));
     const rise = h * 0.035;
     const xl = r.left - 3;
     const xr = r.right + 3;
@@ -719,9 +723,9 @@ export class HighlighterCalendar extends HTMLElement {
         this.sweepDay(r, (r.top + r.bottom) / 2, 1);
         continue;
       }
-      const { rx, ry } = this.engine.brushRadius(r);
+      const { rx } = this.engine.brushRadius(r);
+      const { cy: y, half: ry } = this.band(r);
       const w = r.right - r.left;
-      const y = Math.min(r.bottom - ry * 0.8, Math.max(r.top + ry * 0.8, cov.sumY / cov.n));
       if (cov.maxX + rx < r.right - w * 0.1) this.ink.sweep(cov.maxX, y, r.right + 3, y - 1, ry, true);
       if (cov.minX - rx > r.left + w * 0.1) this.ink.sweep(cov.minX, y, r.left - 3, y - 1, ry, true);
     }
@@ -825,7 +829,17 @@ export class HighlighterCalendar extends HTMLElement {
     this.engine.endStroke();
     this.ink.endLive(!tap);
     this.completeStrokes();
-    if (p.tool === 'highlight') this.ink.prune();
+    if (p.tool === 'highlight') {
+      this.ink.prune();
+      // 松笔：笔画挪进各自那一行的窄带
+      // 只动这一笔碰到的那几段，别的已经落好的不再加深
+      const touched = this.engine.coverage;
+      this.ink.settle(
+        this.runs()
+          .filter((run) => run.days.some((d) => touched.has(d.key)))
+          .map((run) => ({ ...run, ...this.band(run) })),
+      );
+    }
     this.ptr = null;
     this.flipCtx = 'api';
     this.emit('change', p.startValue);
