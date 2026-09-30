@@ -61,6 +61,7 @@ const STYLE = /* css */ `
 }
 .pill {
   position: relative;
+  transition: background 0.2s, box-shadow 0.2s, min-width 0.35s cubic-bezier(0.65, 0, 0.35, 1);
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -76,7 +77,6 @@ const STYLE = /* css */ `
   -webkit-user-select: none;
   touch-action: pan-y;
   outline: none;
-  transition: background 0.2s, box-shadow 0.2s;
 }
 .pill:hover { background: color-mix(in srgb, var(--hp-pill-bg) 85%, var(--hp-fg) 15%); }
 .pill:focus-visible,
@@ -132,6 +132,9 @@ const STYLE = /* css */ `
 }
 .btn:hover { background: color-mix(in srgb, var(--hp-fg) 10%, transparent); }
 .btn[hidden], .count[hidden] { display: none; }
+/* 按钮出现时淡入，不是一下子冒出来 */
+.btn, .count { animation: hp-in 0.25s ease-out; }
+@keyframes hp-in { from { opacity: 0; transform: scale(0.8); } }
 .panel {
   position: absolute;
   top: calc(100% + 12px);
@@ -469,6 +472,7 @@ export class HighlighterPicker extends HTMLElement {
     this.$single.hidden = n >= 2;
     this.toggleAttribute('multi', n >= 2);
 
+    const before = this.$single.hidden ? this.$wheel.textContent : this.$single.textContent;
     if (n === 0) {
       this.$single.textContent = this.formatRange({ start: toKey(new Date()), end: toKey(new Date()) });
       this.$single.classList.add('today');
@@ -477,6 +481,17 @@ export class HighlighterPicker extends HTMLElement {
       this.$single.textContent = this.formatRange(ranges[0]);
       this.$single.classList.remove('today');
       this.hinted = false;
+    }
+    // 文字变了：旧的淡出、新的从下面淡入，不突然换掉
+    const shown = n >= 2 ? this.$wheel : this.$single;
+    if (before !== null && before !== shown.textContent && this.isConnected) {
+      shown.animate(
+        [
+          { opacity: 0, transform: 'translateY(5px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        { duration: 260, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+      );
     } else if (changed) {
       this.$wheel.innerHTML = '';
       for (const r of ranges) {

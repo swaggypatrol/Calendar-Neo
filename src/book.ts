@@ -66,6 +66,7 @@ const STYLE = /* css */ `
   --hb-shadow: rgba(40, 30, 15, 0.18);
   --hb-ink: #ffd21f;
   --hc-card-width: 22rem;
+  --hb-ease: cubic-bezier(0.65, 0, 0.35, 1);
   display: block;
 }
 @media (prefers-color-scheme: dark) {
@@ -100,6 +101,7 @@ const STYLE = /* css */ `
 }
 .shape-l { border-radius: 10px 2px 2px 10px; }
 .shape-r { border-radius: 2px 10px 10px 2px; }
+.page { transition: box-shadow 0.45s; }
 .page.left { box-shadow: var(--edges-left, none), -6px 14px 28px -10px var(--hb-shadow); }
 .page.right { box-shadow: var(--edges-right, none), 6px 14px 28px -10px var(--hb-shadow); }
 /* 中缝：靠近装订处的阴影 */
@@ -181,56 +183,32 @@ highlighter-calendar {
 .corner.prev { left: 40px; }
 .corner.prev::before { left: 0; background: linear-gradient(225deg, var(--hb-paper-edge) 50%, transparent 50%); border-radius: 0 0 0 10px; box-shadow: 2px -2px 5px rgba(0, 0, 0, 0.12); }
 .corner:hover::before { width: 24px; height: 24px; }
-.corner[disabled] { visibility: hidden; }
-/* 书签：有选择的月份那张纸从书口伸出一枚 */
-.tabs {
+.corner { transition: opacity 0.3s; }
+.corner[disabled] { opacity: 0; pointer-events: none; }
+/* 书签：一个月一枚，始终是同一个元素。没翻到时从书口伸出来；翻到这一页时滑进页里，
+   变成从页顶垂下来的燕尾丝带。所有变化都用过渡动画，不会瞬移 */
+.mark {
   position: absolute;
-  top: 10px;
-  bottom: 30px;
-  width: 30px;
-  pointer-events: none;
-}
-.tabs.left { right: calc(100% - 40px); }
-.tabs.right { left: calc(100% - 40px); }
-/* 书签有一半夹在纸下面，只露出带字的一截 */
-.tabs.right .tab { text-align: right; }
-.tabs.left .tab { text-align: left; }
-.tab {
-  position: absolute;
-  width: 30px;
+  z-index: 6;
+  box-sizing: border-box;
   border: 0;
-  padding: 0 4px;
-  font: 600 10px/1 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  padding: 0;
+  font: 700 10px/1 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #3a2f12;
+  text-align: center;
   white-space: nowrap;
   background: color-mix(in srgb, var(--hb-ink) 88%, #ffffff);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
   cursor: pointer;
-  pointer-events: auto;
-  transition: transform 0.15s;
+  transition:
+    left 0.6s var(--hb-ease), top 0.6s var(--hb-ease), width 0.6s var(--hb-ease), height 0.6s var(--hb-ease),
+    padding 0.6s var(--hb-ease), border-radius 0.6s var(--hb-ease), clip-path 0.6s var(--hb-ease),
+    box-shadow 0.6s, opacity 0.35s, translate 0.15s;
 }
-.tabs.right .tab { left: 0; border-radius: 0 6px 6px 0; }
-.tabs.left .tab { right: 0; border-radius: 6px 0 0 6px; }
-.tabs.right .tab:hover { transform: translateX(3px); }
-/* 正在看的月份：书签夹在这一页里，从页顶垂下来，尾巴剪成燕尾 */
-.ribbon {
-  position: absolute;
-  top: -5px;
-  width: 20px;
-  height: 50px;
-  box-sizing: border-box;
-  padding-top: 26px;
-  text-align: center;
-  font: 700 10px/1 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #3a2f12;
-  background: color-mix(in srgb, var(--hb-ink) 88%, #ffffff);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
-  pointer-events: none;
-  z-index: 2;
-}
-.page.left .ribbon { left: 24px; }
-.page.right .ribbon { right: 24px; }
-.tabs.left .tab:hover { transform: translateX(-3px); }
+.mark.ribbon { cursor: default; box-shadow: none; }
+.mark.edge-r:hover { translate: 3px 0; }
+.mark.edge-l:hover { translate: -3px 0; }
+.mark.gone { opacity: 0; pointer-events: none; }
 `;
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
@@ -268,8 +246,8 @@ export class HighlighterBook extends HTMLElement {
   private $front: HTMLElement;
   private $back: HTMLElement;
   private $pool: HTMLElement;
-  private $tabsL: HTMLElement;
-  private $tabsR: HTMLElement;
+  /** 每个有选择的月份一枚书签（月份序号 → 元素）。 */
+  private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
   private pages: HighlighterCalendar[] = [];
@@ -297,14 +275,12 @@ export class HighlighterBook extends HTMLElement {
     root.innerHTML = `
       <style>${STYLE}</style>
       <div class="book" part="book">
-        <div class="tabs left"></div>
         <div class="spread">
           <div class="page left shape-l"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="page right shape-r"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="turn front"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div></div>
         </div>
-        <div class="tabs right"></div>
         <button class="corner prev" type="button" aria-label="上一页"></button>
         <button class="corner next" type="button" aria-label="下一页"></button>
         <div class="pool" aria-hidden="true"></div>
@@ -317,8 +293,6 @@ export class HighlighterBook extends HTMLElement {
     this.$front = q('.turn.front');
     this.$back = q('.turn.back');
     this.$pool = q('.pool');
-    this.$tabsL = q('.tabs.left');
-    this.$tabsR = q('.tabs.right');
     this.$prev = q('.corner.prev');
     this.$next = q('.corner.next');
 
@@ -455,7 +429,7 @@ export class HighlighterBook extends HTMLElement {
     if (this.flip) this.finishFlip(false);
     this.queue = [];
     this.m = this.clampLeft(k);
-    this.layout();
+    this.layout(true);
   }
 
   /** 右页的页角翘起来抖两下，提示可以翻页。 */
@@ -517,6 +491,7 @@ export class HighlighterBook extends HTMLElement {
     }
     if (!this.canFlip(dir)) return;
     this.beginFlip(dir, false);
+    this.renderTabs(this.m + 2 * dir);
     this.animateTo(true, fast ? RIFFLE_MS : FLIP_MS, fast ? easeOut : easeInOut);
   }
 
@@ -536,8 +511,6 @@ export class HighlighterBook extends HTMLElement {
    * 往前翻：左页那张纸（这面 m、另一面 m-1）翻回右边，左边露出 m-2。
    */
   private beginFlip(dir: 1 | -1, top = false): void {
-    // 页上夹着的书签先收起来，翻完再按新的两页放
-    for (const r of this.shadowRoot!.querySelectorAll('.ribbon')) r.remove();
     const W = this.$right.offsetWidth;
     const H = this.$right.offsetHeight;
     for (const el of [this.$front, this.$back]) {
@@ -681,6 +654,7 @@ export class HighlighterBook extends HTMLElement {
       const dir = this.queue.shift()!;
       if (this.canFlip(dir)) {
         this.beginFlip(dir, false);
+        this.renderTabs(this.m + 2 * dir);
         this.animateTo(true, RIFFLE_MS, this.queue.length ? (x) => x : easeOut);
         return;
       }
@@ -768,6 +742,8 @@ export class HighlighterBook extends HTMLElement {
       flapW * 0.8,
       `rgba(255,255,255,${(0.28 * bend).toFixed(3)}), rgba(0,0,0,${(0.1 * bend).toFixed(3)}) 55%, transparent`,
     );
+    // 折过去那片纸的投影也随弧度变化，翻到底时刚好消失
+    (this.$back.parentElement as HTMLElement).style.filter = `drop-shadow(0 0 ${(7 * bend).toFixed(1)}px rgba(0, 0, 0, ${(0.22 * bend).toFixed(3)}))`;
     // 下面那页：被掀起的纸投下的影子，贴着折线往外
     const under = f.dir > 0 ? this.$right : this.$left;
     this.strip(under, toFront(A), toFront(B), toFront(C), 18 + 50 * bend, `rgba(0,0,0,${(0.3 * bend).toFixed(3)}), transparent`);
@@ -789,7 +765,7 @@ export class HighlighterBook extends HTMLElement {
   }
 
   /** 按当前的 m 摆好左右两页、页边和书签。 */
-  private layout(): void {
+  private layout(instant = false): void {
     if (this.flip) return;
     const left = this.holder(this.$left).firstElementChild as HighlighterCalendar;
     const right = this.holder(this.$right).firstElementChild as HighlighterCalendar;
@@ -811,53 +787,90 @@ export class HighlighterBook extends HTMLElement {
     };
     this.$book.style.setProperty('--edges-left', edges(Math.ceil((this.m - lo) / 2), -1));
     this.$book.style.setProperty('--edges-right', edges(Math.ceil((hi - this.m - 1) / 2), 1));
-    this.renderTabs();
+    this.renderTabs(this.m, instant);
   }
 
-  /** 书签：有选中日子的月份，按月份在书口不同高度伸出一枚；翻过去的在左边，还没翻到的在右边。 */
-  private renderTabs(): void {
-    this.$tabsL.innerHTML = '';
-    this.$tabsR.innerHTML = '';
-    for (const r of this.shadowRoot!.querySelectorAll('.ribbon')) r.remove();
-    // 每个月选了几天
+  /**
+   * 书签：有选中日子的月份各一枚，写着那个月选了几天（1 到 5+）。左页是 m 的时候：
+   * 正在看的两页上是夹在页里的丝带，翻过去的在左边书口，还没翻到的在右边书口，
+   * 按月份排在不同高度。换个位置或形状都是平滑过渡过去的。
+   */
+  private renderTabs(m = this.m, instant = false): void {
     const counts = new Map<number, number>();
     for (const d of this.selection) {
       const k = monthIndex(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1);
       counts.set(k, (counts.get(k) ?? 0) + 1);
     }
-    const h = this.$right.getBoundingClientRect().height || 360;
-    const slotH = (h - 40) / 12;
+    const W = this.$right.offsetWidth || 380;
+    const H = this.$right.offsetHeight || 360;
+    const padX = 40;
+    const padY = 10;
+    const slotH = (H - 40) / 12;
+    const th = Math.max(16, Math.min(22, slotH - 4));
     const used = new Map<string, number>();
     for (const [k, n] of [...counts].sort((a, b) => a[0] - b[0])) {
+      let el = this.marks.get(k);
+      const fresh = !el;
+      if (!el) {
+        const mark = document.createElement('button');
+        mark.type = 'button';
+        mark.className = 'mark gone';
+        mark.addEventListener('click', () => {
+          if (!mark.classList.contains('ribbon')) this.goTo(k);
+        });
+        this.$book.append(mark);
+        this.marks.set(k, mark);
+        el = mark;
+      }
       const label = n >= 5 ? '5+' : String(n);
       const name = `${keyOf(k)}：${n} 天`;
-      if (k === this.m || k === this.m + 1) {
-        // 正在看的月份：书签夹进这一页，从页顶垂下来一截
-        const rib = document.createElement('div');
-        rib.className = 'ribbon';
-        rib.textContent = label;
-        rib.title = name;
-        (k === this.m ? this.$left : this.$right).append(rib);
-        continue;
+      el.textContent = label;
+      el.title = name;
+      el.setAttribute('aria-label', name);
+      const st = el.style;
+      if (fresh || instant) st.transition = 'none';
+      if (k === m || k === m + 1) {
+        st.left = `${k === m ? padX + 24 : padX + 2 * W - 44}px`;
+        st.top = `${padY - 5}px`;
+        st.width = '20px';
+        st.height = '50px';
+        st.paddingTop = '26px';
+        st.borderRadius = '0';
+        st.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%)';
+        el.classList.add('ribbon');
+        el.classList.remove('edge-l', 'edge-r');
+        el.tabIndex = -1;
+      } else {
+        const right = k > m;
+        // 同一侧同一高度已经有书签（不同年份的同一个月）：往外再错开一点
+        const spot = `${right ? 'r' : 'l'}${m0Of(k)}`;
+        const extra = used.get(spot) ?? 0;
+        used.set(spot, extra + 1);
+        st.left = `${right ? padX + 2 * W - 4 + extra * 8 : padX - 26 - extra * 8}px`;
+        st.top = `${padY + 12 + m0Of(k) * slotH}px`;
+        st.width = '30px';
+        st.height = `${th}px`;
+        st.paddingTop = `${(th - 10) / 2}px`;
+        st.borderRadius = right ? '0 6px 6px 0' : '6px 0 0 6px';
+        st.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 0 100%)';
+        el.classList.remove('ribbon');
+        el.classList.toggle('edge-r', right);
+        el.classList.toggle('edge-l', !right);
+        el.tabIndex = 0;
       }
-      // 翻过去的在左边书口，还没翻到的在右边书口，按月份排在不同高度
-      const side = k < this.m ? this.$tabsL : this.$tabsR;
-      const tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = 'tab';
-      tab.textContent = label;
-      tab.title = name;
-      tab.setAttribute('aria-label', name);
-      // 同一侧同一高度已经有书签（不同年份的同一个月）：往外再错开一点
-      const spot = `${side === this.$tabsL ? 'l' : 'r'}${m0Of(k)}`;
-      const extra = used.get(spot) ?? 0;
-      used.set(spot, extra + 1);
-      tab.style.top = `${12 + m0Of(k) * slotH}px`;
-      tab.style.height = `${Math.max(16, Math.min(22, slotH - 4))}px`;
-      tab.style.marginLeft = side === this.$tabsR ? `${extra * 8}px` : '';
-      tab.style.marginRight = side === this.$tabsL ? `${extra * 8}px` : '';
-      tab.addEventListener('click', () => this.goTo(k));
-      side.append(tab);
+      if (fresh || instant) {
+        // 新出现的书签（或者整本书直接摊到别的月份）：先原地摆好，再淡入
+        void el.offsetWidth;
+        st.transition = '';
+        requestAnimationFrame(() => el!.classList.remove('gone'));
+      }
+    }
+    // 这个月的选择清空了：书签淡出后再拿掉
+    for (const [k, el] of this.marks) {
+      if (counts.has(k)) continue;
+      this.marks.delete(k);
+      el.classList.add('gone');
+      setTimeout(() => el.remove(), 400);
     }
   }
 
@@ -883,15 +896,20 @@ export class HighlighterBook extends HTMLElement {
     if (!this.flip) this.renderTabs();
   }
 
-  /** 某一页自己翻了月（键盘移出本月）：整本书跟着走。 */
+  /** 某一页自己翻了月（键盘移出本月）：把那页改回来，改成翻一页过去，不直接跳。 */
   private onPageMonth(c: HighlighterCalendar): void {
     if (this.flip) return;
     const k = parseKey(c.month);
     if (k === null) return;
     const isLeft = c.parentElement === this.holder(this.$left);
-    this.m = this.clampLeft(isLeft ? k : k - 1);
-    this.layout();
-    this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
+    const was = isLeft ? this.m : this.m + 1;
+    if (k === this.m || k === this.m + 1) {
+      // 只是从左页移到右页（或反过来）：什么都不用动，把这页改回原来的月份
+      this.setMonth(c, was);
+      return;
+    }
+    this.setMonth(c, was);
+    this.request(k > was ? 1 : -1);
   }
 
   // ---------- 手势：按住空白处横着拖，纸跟着手指翻 ----------
@@ -963,6 +981,8 @@ export class HighlighterBook extends HTMLElement {
     const along = f.dir > 0 ? -vx : vx;
     const p = this.progress(f);
     const go = !cancelled && (p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
+    // 决定翻过去了，书签也跟着这一页一起挪到新位置
+    if (go) this.renderTabs(this.m + 2 * f.dir);
     this.animateTo(go, Math.max(180, FLIP_MS * 0.75 * (go ? 1 - p : p)), easeOut);
   }
 }
