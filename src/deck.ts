@@ -1,46 +1,49 @@
 import type { HighlighterCalendar } from './calendar';
 import type { Tool } from './engine';
 
-/** 先加速再减速。 */
-const EASE = 'cubic-bezier(0.65, 0, 0.35, 1)';
-const DURATION = 720;
 /** 卡堆里每张卡露出来的偏移。 */
 const STACK_DX = 1.2;
 const STACK_DY = 3.2;
+/** 转一个月的时长；一次转过多个月时，每多一个月加一点。 */
+const DURATION = 720;
+const PER_EXTRA_MONTH = 240;
+/** 甩一下最多转过几个月。 */
+const MAX_SPIN = 6;
+/** 飞出 / 飞进屏幕左边时侧过去的角度，有一点 Cover Flow 的味道。 */
+const TILT = 48;
+/** 同时最多要露面的卡：左边飞出去的一张、三张摆开的、右边卡堆最上面一张。 */
+const POOL_SIZE = 6;
+const EPS = 1e-6;
 
-/** 左 / 中 / 右三个位置，外加一张备用卡（翻月时轮换用）。 */
-type Role = 'L' | 'C' | 'R' | 'S';
-const ROLES: Role[] = ['L', 'C', 'R', 'S'];
-const OFFSET: Record<Role, number> = { L: -1, C: 0, R: 1, S: 0 };
-const Z: Record<Role, number> = { L: 3, C: 2, R: 1, S: 0 };
+/** 先加速再减速。 */
+const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+const lerp = (x: number, y: number, t: number) => x + (y - x) * t;
 
-interface YM {
-  y: number;
-  m0: number;
+/**
+ * 整条卡片流的状态。f 是摆在正中间的月份（月份序号 = 年 * 12 + 月），
+ * 转动时是连续变化的小数；a / b 是左边 / 右边摆开的程度，0 收着，1 摆开。
+ */
+interface View {
+  f: number;
+  a: number;
+  b: number;
 }
 
-interface Pos {
-  x: number;
-  y: number;
-}
-
-/** 一张卡在一次动画里的变化；没有 from/to 时只改层级和阴影。 */
-interface Move {
-  el: HighlighterCalendar;
-  from?: Pos;
-  to?: Pos;
-  z?: number;
-  shadow?: string;
-  delay?: number;
+interface Tween {
+  from: View;
+  to: View;
+  start: number;
+  duration: number;
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
-const addMonths = ({ y, m0 }: YM, n: number): YM => {
-  const d = new Date(y, m0 + n, 1);
-  return { y: d.getFullYear(), m0: d.getMonth() };
+const monthIndex = (y: number, m0: number) => y * 12 + m0;
+const m0Of = (k: number) => ((k % 12) + 12) % 12;
+const keyOf = (k: number) => `${Math.floor(k / 12)}-${pad2(m0Of(k) + 1)}`;
+const parseKey = (s: string): number | null => {
+  const m = /^(\d{4})-(\d{1,2})$/.exec(s);
+  return m ? monthIndex(Number(m[1]), Math.min(11, Math.max(0, Number(m[2]) - 1))) : null;
 };
-const ymKey = ({ y, m0 }: YM) => `${y}-${pad2(m0 + 1)}`;
-const tf = ({ x, y }: Pos) => `translate(${x}px, ${y}px)`;
 
 /** 一张卡片下面叠着这一年剩下的月份：1 月下面 11 张，12 月就是最后一张。 */
 function stackShadow(n: number): string {
@@ -79,6 +82,7 @@ const STYLE = /* css */ `
   max-width: 100%;
   margin: 0 auto;
   padding: 8px 0 56px;
+  perspective: 1600px;
 }
 highlighter-calendar {
   grid-area: 1 / 1;
@@ -86,25 +90,22 @@ highlighter-calendar {
   border-radius: 16px;
   background: var(--hc-card-bg);
   touch-action: pan-y;
-  will-change: transform;
 }
-highlighter-calendar.hidden {
-  visibility: hidden;
-  pointer-events: none;
-}
+highlighter-calendar.hidden { visibility: hidden; }
+highlighter-calendar.hidden,
+highlighter-calendar.inert,
 .deck.busy highlighter-calendar { pointer-events: none; }
 `;
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay'];
 
 /**
- * <highlighter-deck>：一叠月份卡片。
+ * <highlighter-deck>：像 iTunes 的 Cover Flow 一样的一条月份卡片流，最多同时摆开三个月。
  *
  * 平时只显示当前月，下面叠着今年剩下的月份。在卡片空白处：
- * - 往右划：下个月从卡堆里滑出来，摆到右边；
- * - 往左划：上个月从屏幕左边外面飞进来（像从反方向一个看不见的卡堆里出来），摆到左边；
- * - 左右都摆开以后继续划：整排平移一个月，最左那张飞出屏幕，最右那张退回卡堆；
- * - 双击：一次摊开左中右三个月，或者收回成一叠。
+ * - 往右划：下个月从卡堆里滑出来，摆到右边；往左划：上个月从屏幕外飞进来，摆到左边；
+ * - 三个月摆满以后再划：整条流转动，最左那张飞出屏幕，最右那张沉回卡堆；甩得越快转过越多个月；
+ * - 点一下：收回成一叠，只留中间那个月。
  * 所有卡片共享同一份选择；属性和 input / change 事件与 <highlighter-calendar> 相同。
  */
 export class HighlighterDeck extends HTMLElement {
@@ -112,13 +113,16 @@ export class HighlighterDeck extends HTMLElement {
 
   private $deck: HTMLElement;
   private pool: HighlighterCalendar[] = [];
-  private roles: Record<Role, HighlighterCalendar>;
-  private base: YM;
-  private showL = false;
-  private showR = false;
-  private busy = false;
+  /** 每张卡现在显示的月份序号。 */
+  private assigned = new Map<HighlighterCalendar, number>();
+  private view: View;
+  private tween: Tween | null = null;
+  private raf = 0;
+  private xOff = -2000;
   private selection: string[] = [];
-  private swipe: { id: number; x: number; y: number; done: boolean } | null = null;
+  private gesture: { id: number; x: number; y: number; t: number; trail: { x: number; t: number }[] } | null = null;
+  private shadows = new Map<HighlighterCalendar, string>();
+  private navShown: boolean | null = null;
   private ro: ResizeObserver | null = null;
 
   constructor() {
@@ -126,8 +130,9 @@ export class HighlighterDeck extends HTMLElement {
     const root = this.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>${STYLE}</style><div class="deck" part="deck"></div>`;
     this.$deck = root.querySelector('.deck')!;
-    for (let i = 0; i < ROLES.length; i++) {
+    for (let i = 0; i < POOL_SIZE; i++) {
       const c = document.createElement('highlighter-calendar');
+      c.classList.add('hidden');
       c.addEventListener('input', () => this.sync(c));
       c.addEventListener('change', () => this.sync(c));
       c.addEventListener('monthchange', (e) => {
@@ -137,22 +142,17 @@ export class HighlighterDeck extends HTMLElement {
       this.$deck.append(c);
       this.pool.push(c);
     }
-    const [l, c, r, s] = this.pool;
-    this.roles = { L: l, C: c, R: r, S: s };
     const now = new Date();
-    this.base = { y: now.getFullYear(), m0: now.getMonth() };
+    this.view = { f: monthIndex(now.getFullYear(), now.getMonth()), a: 0, b: 0 };
 
-    this.$deck.addEventListener('dblclick', (e) => {
-      if (!this.busy && this.isBlank(e)) this.spread = !this.spread;
-    });
     this.$deck.addEventListener('pointerdown', (e) => this.onDown(e));
     this.$deck.addEventListener('pointermove', (e) => this.onMove(e));
-    this.$deck.addEventListener('pointerup', () => (this.swipe = null));
-    this.$deck.addEventListener('pointercancel', () => (this.swipe = null));
+    this.$deck.addEventListener('pointerup', (e) => this.onUp(e));
+    this.$deck.addEventListener('pointercancel', () => (this.gesture = null));
   }
 
   connectedCallback(): void {
-    this.layout();
+    this.place();
     this.ro = new ResizeObserver(() => this.place());
     this.ro.observe(this.$deck);
   }
@@ -160,21 +160,22 @@ export class HighlighterDeck extends HTMLElement {
   disconnectedCallback(): void {
     this.ro?.disconnect();
     this.ro = null;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    if (this.tween) this.finish();
   }
 
   attributeChangedCallback(name: string, _old: string | null, v: string | null): void {
     if (name === 'month') {
-      const m = v && /^(\d{4})-(\d{1,2})$/.exec(v);
-      if (m) {
-        this.base = { y: Number(m[1]), m0: Math.min(11, Math.max(0, Number(m[2]) - 1)) };
-        this.layout();
-      }
+      const k = v ? parseKey(v) : null;
+      if (k !== null) this.jump(k);
     } else if (name === 'value') {
       this.value = (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     } else if (name === 'spread') {
-      // 只作为初始状态：一开始就摊开三个月
-      this.showL = this.showR = v !== null;
-      this.layout();
+      // 只作为初始状态：一开始就摆开三个月
+      const on = v !== null ? 1 : 0;
+      this.view = { ...this.view, a: on, b: on };
+      this.place();
     } else {
       for (const c of this.pool) {
         if (v === null) c.removeAttribute(name);
@@ -196,26 +197,28 @@ export class HighlighterDeck extends HTMLElement {
 
   /** 中间那张（收起时唯一那张）的月份，YYYY-MM。 */
   get month(): string {
-    return ymKey(this.base);
+    return keyOf(Math.round((this.tween?.to ?? this.view).f));
   }
 
   set month(v: string) {
     this.setAttribute('month', v);
   }
 
-  /** 是否摊开了（左右至少有一张）。设为 true 一次摊开三个月，false 收回成一叠。 */
+  /** 是否摆开了（左右至少有一张）。设为 true 一次摆开三个月，false 收回成一叠。 */
   get spread(): boolean {
-    return this.showL || this.showR;
+    const v = this.tween?.to ?? this.view;
+    return v.a > 0 || v.b > 0;
   }
 
   set spread(on: boolean) {
-    if (this.busy) return;
-    if (on) this.spreadAll();
-    else this.collapse();
+    if (this.tween) return;
+    const v = this.view;
+    const t = on ? 1 : 0;
+    if (v.a !== t || v.b !== t) this.tweenTo({ f: v.f, a: t, b: t });
   }
 
   get tool(): Tool {
-    return this.roles.C.tool;
+    return this.pool[0].tool;
   }
 
   set tool(t: Tool) {
@@ -223,7 +226,7 @@ export class HighlighterDeck extends HTMLElement {
   }
 
   get color(): string {
-    return this.roles.C.color;
+    return this.pool[0].color;
   }
 
   set color(v: string) {
@@ -231,7 +234,7 @@ export class HighlighterDeck extends HTMLElement {
   }
 
   get threshold(): number {
-    return this.roles.C.threshold;
+    return this.pool[0].threshold;
   }
 
   set threshold(n: number) {
@@ -252,215 +255,178 @@ export class HighlighterDeck extends HTMLElement {
     );
   }
 
-  /** 等同于在空白处往右划：从卡堆里摊出下个月；右边已经有了就整排往后翻一个月。 */
-  next(): void {
-    if (this.busy) return;
-    if (!this.showR) this.reveal('R');
-    else this.advance();
+  /** 等同于在空白处往右划：右边还收着就摆出下个月，摆满了就往后转 months 个月。 */
+  next(months = 1): void {
+    this.go(1, months);
   }
 
-  /** 等同于在空白处往左划：从屏幕外飞进上个月；左边已经有了就整排往前翻一个月。 */
-  prev(): void {
-    if (this.busy) return;
-    if (!this.showL) this.reveal('L');
-    else this.back();
+  /** 等同于在空白处往左划：左边还收着就飞进上个月，摆满了就往前转 months 个月。 */
+  prev(months = 1): void {
+    this.go(-1, months);
+  }
+
+  // ---------- 转动 ----------
+
+  private go(dir: 1 | -1, n: number): void {
+    if (this.tween) return;
+    const v = this.view;
+    if ((dir > 0 ? v.b : v.a) < 1) {
+      // 这一边还收着：只把这一边的一个月摆出来
+      this.tweenTo(dir > 0 ? { ...v, b: 1 } : { ...v, a: 1 });
+      return;
+    }
+    // 这一边已经摆开：整条流转动。另一边还收着的话，转一格正好摆满三个月
+    const steps = (dir > 0 ? v.a : v.b) < 1 ? 1 : Math.max(1, Math.min(MAX_SPIN, n));
+    this.tweenTo({ f: v.f + dir * steps, a: 1, b: 1 }, steps);
+  }
+
+  private jump(k: number): void {
+    if (this.tween) this.finish();
+    this.view = { ...this.view, f: k };
+    this.assigned.clear();
+    this.place();
+  }
+
+  private tweenTo(to: View, steps = 1): void {
+    this.xOff = this.offscreenX();
+    this.tween = {
+      from: { ...this.view },
+      to,
+      start: performance.now(),
+      duration: DURATION + (steps - 1) * PER_EXTRA_MONTH,
+    };
+    this.$deck.classList.add('busy');
+    if (!this.raf) this.raf = requestAnimationFrame(this.loop);
+  }
+
+  private loop = (now: number): void => {
+    this.raf = 0;
+    const tw = this.tween;
+    if (!tw) return;
+    const p = Math.min(1, Math.max(0, (now - tw.start) / tw.duration));
+    if (p >= 1) {
+      this.finish();
+      return;
+    }
+    const e = ease(p);
+    this.view = { f: lerp(tw.from.f, tw.to.f, e), a: lerp(tw.from.a, tw.to.a, e), b: lerp(tw.from.b, tw.to.b, e) };
+    this.place();
+    this.raf = requestAnimationFrame(this.loop);
+  };
+
+  private finish(): void {
+    const tw = this.tween!;
+    this.view = { ...tw.to };
+    this.tween = null;
+    this.$deck.classList.remove('busy');
+    this.place();
+    if (tw.to.f !== tw.from.f) this.emit('monthchange', { month: this.month });
+    if (tw.to.a !== tw.from.a || tw.to.b !== tw.from.b) {
+      this.emit('spreadchange', { spread: this.spread, left: this.view.a > 0, right: this.view.b > 0 });
+    }
   }
 
   // ---------- 摆放 ----------
 
-  private ymOf(role: Role): YM {
-    return addMonths(this.base, OFFSET[role]);
-  }
-
-  /** 这张卡下面还叠着今年的几个月。 */
-  private pile(ym: YM): number {
-    return 11 - ym.m0;
+  private get cardWidth(): number {
+    return this.pool[0].offsetWidth || 352;
   }
 
   private get step(): number {
     const gap = parseFloat(getComputedStyle(this).getPropertyValue('--deck-gap')) || 20;
-    return this.roles.C.offsetWidth + gap;
+    return this.cardWidth + gap;
   }
 
   /** 屏幕左边外面：那个看不见的、反方向的卡堆。 */
-  private offLeft(): Pos {
-    const r = this.roles.C.getBoundingClientRect();
-    return { x: -(r.left + r.width + 40), y: STACK_DY };
+  private offscreenX(): number {
+    const r = this.$deck.getBoundingClientRect();
+    const w = this.cardWidth;
+    const cellLeft = r.left + (r.width - w) / 2;
+    return Math.min(-(cellLeft + w + 60), -2 * this.step - 60);
   }
 
-  private layout(): void {
-    for (const role of ['L', 'C', 'R'] as const) {
-      const c = this.roles[role];
-      const key = ymKey(this.ymOf(role));
-      if (c.month !== key) c.setAttribute('month', key);
-    }
-    this.setNav(!this.spread);
-    this.place();
-  }
-
-  /** 按当前状态摆好每张卡：位置、层级、显隐，卡堆永远在最右边那张下面。 */
+  /**
+   * 按当前状态（可以是转到一半）给每个要露面的月份分配一张卡并摆好：
+   * 中间摆开的在桌面上；右边多出来的压在最右那张下面当卡堆；
+   * 左边多出来的侧着身子飞向屏幕外。
+   */
   private place(): void {
-    if (this.busy) return;
-    const s = this.step;
-    const top: Role = this.showR ? 'R' : 'C';
-    const pos: Record<Role, Pos> = {
-      L: { x: -s, y: 0 },
-      C: { x: 0, y: 0 },
-      R: { x: s, y: 0 },
-      S: { x: s + STACK_DX, y: STACK_DY },
-    };
-    for (const role of ROLES) {
-      const c = this.roles[role];
-      const visible = role === 'C' || (role === 'L' && this.showL) || (role === 'R' && this.showR);
-      c.classList.toggle('hidden', !visible);
-      c.style.transform = tf(pos[role]);
-      c.style.zIndex = String(Z[role]);
-      c.style.boxShadow = stackShadow(role === top ? this.pile(this.ymOf(role)) : 0);
+    if (!this.isConnected) return;
+    const { f, a, b } = this.view;
+    const step = this.step;
+    const lo = Math.ceil(f - a - 1 - EPS);
+    const hi = Math.floor(f + b + 1 + EPS);
+
+    for (const [el, k] of this.assigned) if (k < lo || k > hi) this.assigned.delete(el);
+    const taken = new Set(this.assigned.values());
+    const free = this.pool.filter((el) => !this.assigned.has(el));
+    for (let k = lo; k <= hi; k++) {
+      if (taken.has(k)) continue;
+      const key = keyOf(k);
+      const i = free.findIndex((el) => el.month === key);
+      const el = free.splice(i >= 0 ? i : free.length - 1, 1)[0];
+      if (!el) break;
+      this.assigned.set(el, k);
+      if (el.month !== key) {
+        // 换月份前先摆平，日历才能按正常尺寸量格子、画笔迹
+        el.style.transform = 'none';
+        el.month = key;
+      }
     }
-  }
 
-  /** 收起时中间那张可以用箭头翻月；摊开后改用左右划。 */
-  private setNav(show: boolean): void {
-    for (const c of this.pool) c.toggleAttribute('hide-nav', !show);
-  }
-
-  // ---------- 动画 ----------
-
-  private revealRMoves(): Move[] {
-    const { C, R } = this.roles;
-    return [
-      // 卡堆跟着下个月一起从本月下面滑出去
-      { el: C, shadow: stackShadow(0) },
-      {
-        el: R,
-        from: { x: STACK_DX, y: STACK_DY },
-        to: { x: this.step, y: 0 },
-        z: 1,
-        shadow: stackShadow(this.pile(this.ymOf('R'))),
-      },
-    ];
-  }
-
-  private hideRMoves(): Move[] {
-    return [{ el: this.roles.R, from: { x: this.step, y: 0 }, to: { x: STACK_DX, y: STACK_DY }, z: 1 }];
-  }
-
-  private revealLMoves(delay = 0): Move[] {
-    return [{ el: this.roles.L, from: this.offLeft(), to: { x: -this.step, y: 0 }, z: 4, delay }];
-  }
-
-  private hideLMoves(): Move[] {
-    return [{ el: this.roles.L, from: { x: -this.step, y: 0 }, to: this.offLeft(), z: 4 }];
-  }
-
-  private reveal(side: 'L' | 'R'): void {
-    this.setNav(false);
-    this.run(side === 'R' ? this.revealRMoves() : this.revealLMoves(), 'spreadchange', () => {
-      if (side === 'R') this.showR = true;
-      else this.showL = true;
-    });
-  }
-
-  private spreadAll(): void {
-    const moves = [
-      ...(this.showR ? [] : this.revealRMoves()),
-      ...(this.showL ? [] : this.revealLMoves(this.showR ? 0 : 90)),
-    ];
-    if (!moves.length) return;
-    this.setNav(false);
-    this.run(moves, 'spreadchange', () => {
-      this.showL = this.showR = true;
-    });
-  }
-
-  private collapse(): void {
-    const moves = [...(this.showR ? this.hideRMoves() : []), ...(this.showL ? this.hideLMoves() : [])];
-    if (!moves.length) return;
-    this.run(moves, 'spreadchange', () => {
-      this.showL = this.showR = false;
-    });
-  }
-
-  /** 往后翻：最左那张飞出屏幕，整排左移，新的下个月从右边卡堆里浮上来。 */
-  private advance(): void {
-    const { L, C, R, S } = this.roles;
-    const s = this.step;
-    const incoming = addMonths(this.base, 2);
-    S.setAttribute('month', ymKey(incoming));
-    this.setNav(false);
-    const moves: Move[] = [
-      { el: C, from: { x: 0, y: 0 }, to: { x: -s, y: 0 }, z: 3, shadow: stackShadow(0) },
-      { el: R, from: { x: s, y: 0 }, to: { x: 0, y: 0 }, z: 2, shadow: stackShadow(0) },
-      {
-        el: S,
-        from: { x: s + STACK_DX, y: STACK_DY },
-        to: { x: s, y: 0 },
-        z: 1,
-        shadow: stackShadow(this.pile(incoming)),
-      },
-    ];
-    if (this.showL) moves.push({ el: L, from: { x: -s, y: 0 }, to: this.offLeft(), z: 4 });
-    this.run(moves, 'monthchange', () => {
-      this.base = addMonths(this.base, 1);
-      this.roles = { L: C, C: R, R: S, S: L };
-      this.showL = this.showR = true;
-    });
-  }
-
-  /** 往前翻：整排右移，最右那张退回卡堆，新的上个月从屏幕外飞进来。 */
-  private back(): void {
-    const { L, C, R, S } = this.roles;
-    const s = this.step;
-    const incoming = addMonths(this.base, -2);
-    S.setAttribute('month', ymKey(incoming));
-    this.setNav(false);
-    const moves: Move[] = [
-      { el: S, from: this.offLeft(), to: { x: -s, y: 0 }, z: 4 },
-      { el: L, from: { x: -s, y: 0 }, to: { x: 0, y: 0 }, z: 3 },
-    ];
-    if (this.showR) {
-      // 右边那张往卡堆里一沉，本月滑过去盖在上面
-      moves.push({ el: R, from: { x: s, y: 0 }, to: { x: s + STACK_DX, y: STACK_DY }, z: 1 });
-      moves.push({ el: C, from: { x: 0, y: 0 }, to: { x: s, y: 0 }, z: 2, shadow: stackShadow(0) });
-    } else {
-      // 本月就是卡堆最上面那张，带着卡堆一起右移
-      moves.push({ el: C, from: { x: 0, y: 0 }, to: { x: s, y: 0 }, z: 2 });
+    const rest = !this.tween;
+    for (const el of this.pool) {
+      const k = this.assigned.get(el);
+      let x = 0;
+      let y = 0;
+      let tilt = 0;
+      let opacity = 1;
+      let pile = 0;
+      let onTable = false;
+      if (k === undefined) {
+        opacity = 0;
+      } else {
+        const u = k - f;
+        if (u < -a - EPS) {
+          const d = Math.min(1, -a - u);
+          x = lerp(u * step, this.xOff, d);
+          y = d * STACK_DY;
+          tilt = d * TILT;
+          if (d >= 1 - EPS) opacity = 0;
+        } else if (u > b + EPS) {
+          const d = u - b;
+          x = b * step + d * STACK_DX;
+          y = d * STACK_DY;
+          if (d > 1 + EPS) {
+            opacity = 0;
+          } else {
+            pile = 11 - m0Of(k);
+            // 新一年的 1 月：上一年 12 月下面本来没有卡堆，滑出来时才淡入
+            if (m0Of(k) === 0) opacity = Math.min(1, Math.max(0, 1 - d));
+          }
+        } else {
+          x = u * step;
+          onTable = true;
+        }
+        el.style.zIndex = String(Math.round(100 - u * 10));
+      }
+      el.style.transform = `translate(${x}px, ${y}px)${tilt ? ` rotateY(${tilt}deg)` : ''}`;
+      el.style.opacity = opacity < 1 ? String(opacity) : '';
+      el.classList.toggle('hidden', opacity <= 0);
+      el.classList.toggle('inert', !onTable || !rest);
+      const shadow = stackShadow(pile);
+      if (this.shadows.get(el) !== shadow) {
+        this.shadows.set(el, shadow);
+        el.style.boxShadow = shadow;
+      }
     }
-    this.run(moves, 'monthchange', () => {
-      this.base = addMonths(this.base, -1);
-      this.roles = { L: S, C: L, R: C, S: R };
-      this.showL = this.showR = true;
-    });
-  }
 
-  private run(moves: Move[], event: 'spreadchange' | 'monthchange', commit: () => void): void {
-    this.busy = true;
-    this.$deck.classList.add('busy');
-    const anims: Animation[] = [];
-    for (const m of moves) {
-      m.el.classList.remove('hidden');
-      if (m.z !== undefined) m.el.style.zIndex = String(m.z);
-      if (m.shadow !== undefined) m.el.style.boxShadow = m.shadow;
-      if (!m.from || !m.to) continue;
-      anims.push(
-        m.el.animate([{ transform: tf(m.from) }, { transform: tf(m.to) }], {
-          duration: DURATION,
-          delay: m.delay ?? 0,
-          easing: EASE,
-          fill: 'both',
-        }),
-      );
+    // 收起时中间那张可以用箭头翻月；摆开后改用左右划
+    const nav = rest && a === 0 && b === 0;
+    if (nav !== this.navShown) {
+      this.navShown = nav;
+      for (const el of this.pool) el.toggleAttribute('hide-nav', !nav);
     }
-    Promise.all(anims.map((a) => a.finished.catch(() => undefined))).then(() => {
-      commit();
-      this.busy = false;
-      this.layout();
-      for (const a of anims) a.cancel();
-      this.$deck.classList.remove('busy');
-      const detail =
-        event === 'monthchange' ? { month: this.month } : { spread: this.spread, left: this.showL, right: this.showR };
-      this.dispatchEvent(new CustomEvent(event, { detail, bubbles: true, composed: true }));
-    });
   }
 
   // ---------- 选择与手势 ----------
@@ -470,14 +436,20 @@ export class HighlighterDeck extends HTMLElement {
     for (const c of this.pool) if (c !== from) c.value = this.selection;
   }
 
-  /** 卡片自己翻了月（收起时点箭头、键盘移出本月）：整叠跟着走。 */
-  private onCardMonth(c: HighlighterCalendar): void {
-    const role = ROLES.find((r) => this.roles[r] === c);
-    if (!role || role === 'S') return;
-    const [y, m] = c.month.split('-').map(Number);
-    this.base = addMonths({ y, m0: m - 1 }, -OFFSET[role]);
-    this.layout();
-    this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
+  /** 卡片自己翻了月（收起时点箭头、键盘移出本月）：整条流跟着走。 */
+  private onCardMonth(el: HighlighterCalendar): void {
+    const k0 = this.assigned.get(el);
+    const k1 = parseKey(el.month);
+    if (this.tween || k0 === undefined || k1 === null || k0 === k1) return;
+    this.view = { ...this.view, f: this.view.f + (k1 - k0) };
+    this.assigned.clear();
+    this.assigned.set(el, k1);
+    this.place();
+    this.emit('monthchange', { month: this.month });
+  }
+
+  private emit(type: 'monthchange' | 'spreadchange', detail: object): void {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
   /** 卡片上的空白处：不在日期格子里、也不是按钮。 */
@@ -488,20 +460,39 @@ export class HighlighterDeck extends HTMLElement {
   }
 
   private onDown(e: PointerEvent): void {
-    if (this.busy || !this.isBlank(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    this.swipe = { id: e.pointerId, x: e.clientX, y: e.clientY, done: false };
+    if (this.tween || !this.isBlank(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    this.gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, trail: [{ x: e.clientX, t: e.timeStamp }] };
+    try {
+      this.$deck.setPointerCapture(e.pointerId);
+    } catch {
+      // 合成事件没有真实指针，拿不到捕获也没关系
+    }
   }
 
   private onMove(e: PointerEvent): void {
-    const s = this.swipe;
-    if (!s || s.id !== e.pointerId || s.done) return;
-    const dx = e.clientX - s.x;
-    const dy = e.clientY - s.y;
-    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    s.done = true;
-    // 往右划出下个月，往左划出上个月
-    if (dx > 0) this.next();
-    else this.prev();
+    const g = this.gesture;
+    if (!g || g.id !== e.pointerId) return;
+    g.trail.push({ x: e.clientX, t: e.timeStamp });
+    if (g.trail.length > 24) g.trail.shift();
+  }
+
+  private onUp(e: PointerEvent): void {
+    const g = this.gesture;
+    this.gesture = null;
+    if (!g || g.id !== e.pointerId) return;
+    const dx = e.clientX - g.x;
+    const dy = e.clientY - g.y;
+    if (Math.hypot(dx, dy) < 8 && e.timeStamp - g.t < 400) {
+      // 点一下空白处：收回成一叠
+      this.spread = false;
+      return;
+    }
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    // 松手前一小段的速度：甩得越快、划得越远，转过的月份越多
+    const recent = g.trail.find((p) => e.timeStamp - p.t <= 100) ?? g.trail[0];
+    const v = Math.abs(e.clientX - recent.x) / Math.max(16, e.timeStamp - recent.t);
+    const n = 1 + Math.floor(Math.max(0, Math.abs(dx) - 40) / this.step) + Math.floor(Math.max(0, v - 1.2) / 0.8);
+    this.go(dx > 0 ? 1 : -1, n);
   }
 }
 

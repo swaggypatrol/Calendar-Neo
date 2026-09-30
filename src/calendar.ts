@@ -55,6 +55,8 @@ const STYLE = /* css */ `
   .day.selected { color: #1d2127; }
 }
 .hc {
+  user-select: none;
+  -webkit-user-select: none;
   background: var(--hc-bg);
   border-radius: 16px;
   padding: 14px 14px 12px;
