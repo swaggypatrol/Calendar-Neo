@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "dev": "vite",
+    "dev:booking": "vite --open /booking.html",
     "build": "tsc --noEmit && vite build && tsc -p tsconfig.build.json",
     "build:demo": "vite build --mode demo",
     "test": "vitest run",

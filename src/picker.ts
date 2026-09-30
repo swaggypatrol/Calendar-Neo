@@ -148,7 +148,7 @@ const STYLE = /* css */ `
 :host([open]) .panel { visibility: visible; }
 `;
 
-const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value'];
+const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value', 'min', 'max'];
 
 /**
  * <highlighter-picker>：预订网站用的日期框。
@@ -407,7 +407,7 @@ export class HighlighterPicker extends HTMLElement {
       ? parseFloat(getComputedStyle(document.documentElement).fontSize)
       : 1;
     const gap = parseFloat(cs.getPropertyValue('--deck-gap')) || 20;
-    return 3 * card * unit + 2 * gap;
+    return 2 * card * unit + gap;
   }
 
   /** 面板收成窄框大小时的裁切和位移：刚好盖在窄框上。 */

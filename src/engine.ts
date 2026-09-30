@@ -83,6 +83,8 @@ interface Hold {
 export class HighlighterEngine {
   onFlip: ((e: FlipEvent) => void) | null = null;
   brushScale = 1;
+  /** 哪些日期不能选（比如预约时已经过去的日子）。笔刷划过它们不起作用。 */
+  isDisabled: ((key: string) => boolean) | null = null;
 
   private _threshold = DEFAULT_THRESHOLD;
   private rows: RowLayout[] = [];
@@ -168,8 +170,12 @@ export class HighlighterEngine {
     this.states = next;
   }
 
+  disabled(key: string): boolean {
+    return this.isDisabled?.(key) ?? false;
+  }
+
   setSelection(keys: Iterable<string>): void {
-    this.selection = new Set(keys);
+    this.selection = new Set([...keys].filter((k) => !this.disabled(k)));
     for (const [key, d] of this.states) {
       d.selected = this.selection.has(key);
       d.mask.fill(d.selected ? 1 : 0);
@@ -179,6 +185,7 @@ export class HighlighterEngine {
   /** 直接设置某天（键盘操作、单击用）。origin 是颜料洇开的起点（小格坐标）。 */
   setDay(key: string, selected: boolean, originX = GRID / 2, originY = GRID / 2): void {
     if (this.selection.has(key) === selected) return;
+    if (selected && this.disabled(key)) return;
     if (selected) this.selection.add(key);
     else this.selection.delete(key);
     const d = this.states.get(key);
@@ -217,7 +224,7 @@ export class HighlighterEngine {
     for (const d of this.states.values()) {
       const r = d.rect;
       if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
-      if (d.selected === want) return false;
+      if (d.selected === want || this.disabled(r.key)) return false;
       const ox = ((x - r.left) / (r.right - r.left)) * GRID;
       const oy = ((y - r.top) / (r.bottom - r.top)) * GRID;
       this.setDay(r.key, want, ox, oy);
@@ -252,15 +259,15 @@ export class HighlighterEngine {
         own = r;
       }
     }
-    if (!own) return;
+    if (!own || this.disabled(own.key)) return;
     const w = own.right - own.left;
     if (best > w * 0.25) return;
     const zone = w * HOLD.edgeZone;
     const contested: Contested[] = [];
     const left = row.days.find((r) => r.slot === own.slot - 1);
     const right = row.days.find((r) => r.slot === own.slot + 1);
-    if (left && x < own.left + zone) contested.push({ day: this.states.get(left.key)!, side: -1 });
-    if (right && x > own.right - zone) contested.push({ day: this.states.get(right.key)!, side: 1 });
+    if (left && !this.disabled(left.key) && x < own.left + zone) contested.push({ day: this.states.get(left.key)!, side: -1 });
+    if (right && !this.disabled(right.key) && x > own.right - zone) contested.push({ day: this.states.get(right.key)!, side: 1 });
     this.hold = {
       x,
       y: Math.min(own.bottom, Math.max(own.top, y)),
@@ -394,7 +401,7 @@ export class HighlighterEngine {
 
   private apply(d: DayState, idx: number): void {
     const t = this.tool === 'highlight' ? 1 : 0;
-    if (d.selected === (t === 1) || d.mask[idx] === t) return;
+    if (d.selected === (t === 1) || d.mask[idx] === t || this.disabled(d.rect.key)) return;
     d.mask[idx] = t;
     this.touched.add(d);
     if (this.count(d, t) < this._threshold) return;
