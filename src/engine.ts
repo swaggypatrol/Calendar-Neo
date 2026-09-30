@@ -1,10 +1,11 @@
 /**
- * 荧光笔选择引擎（纯逻辑，不依赖 DOM，方便测试和移植）。
+ * Highlighter selection engine (pure logic, no DOM, so it is easy to test and port).
  *
- * 每个日期被切成 GRID x GRID（8x8）个小格。笔刷划过就涂上小格，
- * 被涂的小格数 >= threshold 时这一天翻转为「选中」并整格涂满；
- * 橡皮擦是完全对称的反向操作。一笔结束（松手）时，没翻转的日期
- * 会恢复原状，所以静止状态下永远是「选中 = 满格，未选中 = 空白」。
+ * Each day is divided into GRID x GRID (8x8) cells. The brush paints the cells it
+ * passes over; once the painted count reaches `threshold`, the day flips to
+ * "selected" and fills completely. The eraser is the exact mirror operation.
+ * When a stroke ends (pointer up), days that did not flip revert, so at rest a
+ * day is always either "selected = fully painted" or "unselected = blank".
  */
 
 export const GRID = 8;
@@ -12,7 +13,7 @@ export const CELLS = GRID * GRID;
 
 export type Tool = 'highlight' | 'erase';
 
-/** 一个日期格在容器内的像素矩形。slot 是它在一周里的列号（0-6）。 */
+/** Pixel rect of a day cell inside the container. `slot` is its column within the week (0-6). */
 export interface DayRect {
   key: string;
   slot: number;
@@ -22,7 +23,7 @@ export interface DayRect {
   bottom: number;
 }
 
-/** 一周一行；days 只包含真实日期（空白占位不算）。 */
+/** One row per week; `days` holds only real dates (blank placeholders are omitted). */
 export interface RowLayout {
   top: number;
   bottom: number;
@@ -38,12 +39,12 @@ export interface DayState {
 export interface FlipEvent {
   key: string;
   selected: boolean;
-  /** 颜料从哪里开始洇开（以小格为单位，0..GRID），给动画用。 */
+  /** Where the paint starts bleeding from (in cells, 0..GRID); used for animation. */
   originX: number;
   originY: number;
 }
 
-/** 这一笔在某天上覆盖到的横向范围（笔尖中心 x）和平均 y，用来在松手后补全笔触。 */
+/** Horizontal extent (brush-centre x) and average y this stroke covered on a day; used to complete the stroke after release. */
 export interface Coverage {
   minX: number;
   maxX: number;
@@ -53,15 +54,15 @@ export interface Coverage {
 
 export const DEFAULT_THRESHOLD = 35;
 
-/** 笔刷是一个竖长的椭圆（像荧光笔的斜切笔头），尺寸相对日期格。 */
+/** The brush is a tall ellipse (like a highlighter's chisel tip), sized relative to the day cell. */
 export const BRUSH = { rx: 0.16, ry: 0.34 };
 
 export const HOLD = {
-  /** 长按时颜料扩散速度（小格/秒）。 */
+  /** How fast paint spreads while holding (cells per second). */
   speed: 5,
-  /** 洇到邻格一半后，继续按住多久才把邻格也吃掉（毫秒）。 */
+  /** After bleeding halfway into a neighbour, how long to keep holding before it takes the neighbour too (ms). */
   pause: 450,
-  /** 按在离左右边缘多近（占格宽比例）算「夹在两个数字之间」。 */
+  /** How close to the left/right edge (fraction of cell width) counts as "between two numbers". */
   edgeZone: 0.25,
 };
 
@@ -83,7 +84,7 @@ interface Hold {
 export class HighlighterEngine {
   onFlip: ((e: FlipEvent) => void) | null = null;
   brushScale = 1;
-  /** 哪些日期不能选（比如预约时已经过去的日子）。笔刷划过它们不起作用。 */
+  /** Which days cannot be selected (e.g. past days when booking). The brush has no effect on them. */
   isDisabled: ((key: string) => boolean) | null = null;
 
   private _threshold = DEFAULT_THRESHOLD;
@@ -121,17 +122,17 @@ export class HighlighterEngine {
     return this.hold !== null;
   }
 
-  /** 长按扩散所处阶段：grow 扩散中 / pause 洇到邻格一半在等待 / spread 吃掉邻格 / done 结束。 */
+  /** Phase of the hold spread: grow = spreading / pause = halfway into a neighbour, waiting / spread = taking the neighbour / done = finished. */
   get holdPhase(): Hold['phase'] | null {
     return this.hold?.phase ?? null;
   }
 
-  /** 当前这一笔在各天上的覆盖范围。 */
+  /** Coverage of the current stroke on each day. */
   get coverage(): ReadonlyMap<string, Coverage> {
     return this._coverage;
   }
 
-  /** 笔尖（椭圆）在某天上的半宽、半高，单位像素。 */
+  /** Half-width and half-height of the brush tip (ellipse) on a given day, in pixels. */
   brushRadius(rect: DayRect): { rx: number; ry: number } {
     return {
       rx: (rect.right - rect.left) * BRUSH.rx * this.brushScale,
@@ -139,7 +140,7 @@ export class HighlighterEngine {
     };
   }
 
-  /** 长按扩散的中心点（没有长按时为 null）。 */
+  /** Centre of the hold spread (null when not holding). */
   get holdPoint(): { x: number; y: number } | null {
     return this.hold ? { x: this.hold.x, y: this.hold.y } : null;
   }
@@ -182,7 +183,7 @@ export class HighlighterEngine {
     }
   }
 
-  /** 直接设置某天（键盘操作、单击用）。origin 是颜料洇开的起点（小格坐标）。 */
+  /** Set a day directly (for keyboard and taps). `origin` is where the paint bleeds from (in cell coordinates). */
   setDay(key: string, selected: boolean, originX = GRID / 2, originY = GRID / 2): void {
     if (this.selection.has(key) === selected) return;
     if (selected && this.disabled(key)) return;
@@ -218,7 +219,7 @@ export class HighlighterEngine {
     this.last = { x, y };
   }
 
-  /** 单击（没拖动、没长按）：像滴一滴颜料，直接把点中的那天涂满/擦掉。 */
+  /** Tap (no drag, no hold): like a drop of paint, fills or erases the tapped day outright. */
   tap(x: number, y: number): boolean {
     const want = this.tool === 'highlight';
     for (const d of this.states.values()) {
@@ -242,9 +243,10 @@ export class HighlighterEngine {
   }
 
   /**
-   * 笔停住不动：以按下点为圆心往外扩散颜料，直到填满所在的那天。
-   * 如果按在两个数字之间（靠近左右边缘），先洇到邻格的一半停住，
-   * 继续按住才把邻格也吃掉。扩散只在同一行内，不会跑到上下排。
+   * Pen held still: paint spreads outward from the press point until it fills that day.
+   * If pressed between two numbers (near the left/right edge), it first bleeds halfway
+   * into the neighbour and stops; keep holding and it takes the neighbour too. The
+   * spread stays within the same row and never leaks into the rows above or below.
    */
   startHold(x: number, y: number): void {
     if (!this.active) return;
@@ -283,7 +285,7 @@ export class HighlighterEngine {
     this.hold = null;
   }
 
-  /** 推进长按扩散，dt 为毫秒。 */
+  /** Advance the hold spread; `dt` is in milliseconds. */
   tick(dt: number): void {
     const h = this.hold;
     if (!h || !this.active || h.phase === 'done') return;
@@ -309,7 +311,7 @@ export class HighlighterEngine {
     }
   }
 
-  /** 把 d 里离扩散中心 <= r 的小格涂上；返回是否还有够不着的待涂小格。 */
+  /** Paint cells in `d` within distance `r` of the spread centre; returns whether unreachable cells remain. */
   private spread(h: Hold, d: DayState, side: -1 | 0 | 1, cap: number): boolean {
     const t = this.tool === 'highlight' ? 1 : 0;
     if (d.selected === (t === 1)) return false;
@@ -319,7 +321,7 @@ export class HighlighterEngine {
     let pending = false;
     for (let j = 0; j < GRID; j++) {
       for (let i = 0; i < GRID; i++) {
-        // 邻格只允许洇到靠近自己的那一半
+        // A neighbour may only be painted on the half nearest to us
         if (side === -1 && i < GRID / 2) continue;
         if (side === 1 && i >= GRID / 2) continue;
         const idx = j * GRID + i;
@@ -345,7 +347,7 @@ export class HighlighterEngine {
     return Math.min(rx, ry) * 0.6;
   }
 
-  /** 找 y 所在的那一行；笔刷只作用在这一行，所以不会误涂到上下排。 */
+  /** Find the row containing y; the brush only affects that row, so it never spills into rows above or below. */
   private rowAt(y: number): RowLayout | null {
     let best: RowLayout | null = null;
     let bd = Infinity;
@@ -406,7 +408,7 @@ export class HighlighterEngine {
     this.touched.add(d);
     if (this.count(d, t) < this._threshold) return;
 
-    // 翻转：记下已涂部分的重心，让剩下的颜料从那里洇开
+    // Flip: record the centroid of the painted cells so the remaining paint bleeds out from there
     let sx = 0;
     let sy = 0;
     let n = 0;

@@ -11,10 +11,10 @@ export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowL
 
 let baseDefined = false;
 
-/** 注册自定义元素（默认名 highlighter-calendar），重复调用是安全的。 */
+/** Register the custom element (default name highlighter-calendar); safe to call more than once. */
 export function defineHighlighterCalendar(tag = 'highlighter-calendar'): void {
   if (typeof customElements !== 'undefined' && !customElements.get(tag)) {
-    // 同一个类只能注册一次，换名字注册时用子类
+    // A class can only be registered once, so registering under another name uses a subclass
     customElements.define(tag, baseDefined ? class extends HighlighterCalendar {} : HighlighterCalendar);
     baseDefined = true;
   }
@@ -26,7 +26,7 @@ if (typeof customElements !== 'undefined' && !customElements.get('highlighter-de
   customElements.define('highlighter-deck', HighlighterDeck);
 }
 
-// 日期框里用到书，要先注册书
+// The date picker uses the book, so register the book first
 if (typeof customElements !== 'undefined' && !customElements.get('highlighter-book')) {
   customElements.define('highlighter-book', HighlighterBook);
 }

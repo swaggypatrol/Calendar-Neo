@@ -27,14 +27,16 @@ slider.addEventListener('input', () => {
 
 $('clear').addEventListener('click', () => cal.clear());
 
-/** 把日期列表合并成区间显示：9月3日 – 9月6日、9月10日 */
+const dayFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
+
+/** Merge a list of dates into ranges for display: Sep 3 – Sep 6, Sep 10 */
 function ranges(keys: string[]): string {
-  if (!keys.length) return '还没有选日期';
+  if (!keys.length) return 'No dates selected yet';
   const days = keys.map((k) => {
     const [y, m, d] = k.split('-').map(Number);
     return new Date(y, m - 1, d);
   });
-  const fmt = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
+  const fmt = (d: Date) => dayFmt.format(d);
   const out: string[] = [];
   let start = days[0];
   let prev = days[0];
@@ -46,7 +48,7 @@ function ranges(keys: string[]): string {
     out.push(start === prev ? fmt(start) : `${fmt(start)} – ${fmt(prev)}`);
     if (d) start = prev = d;
   }
-  return out.join('、');
+  return out.join(', ');
 }
 
 function show(value: string[]) {

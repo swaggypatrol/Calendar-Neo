@@ -2,10 +2,10 @@ import type { CalendarChangeDetail } from './calendar';
 import type { HighlighterBook } from './book';
 import type { Tool } from './engine';
 
-/** 先加速再减速，和卡片流用同一条曲线。 */
+/** Ease in then out; the same curve as the card deck. */
 const EASE = 'cubic-bezier(0.65, 0, 0.35, 1)';
 const OPEN_MS = 560;
-/** 滚轮上相邻两段日期之间的角度，以及滚轮半径。 */
+/** Angle between adjacent date ranges on the wheel, and the wheel radius. */
 const WHEEL_DEG = 55;
 const WHEEL_R = 150;
 
@@ -18,7 +18,7 @@ interface Range {
   end: string;
 }
 
-/** 把选中的日期按连续段分组：3、4、5、9 号 → [3–5]、[9]。 */
+/** Group the selected dates into consecutive runs: 3, 4, 5, 9 → [3–5], [9]. */
 export function toRanges(keys: string[]): Range[] {
   const out: Range[] = [];
   for (const k of [...keys].sort()) {
@@ -93,7 +93,7 @@ const STYLE = /* css */ `
 .single { position: absolute; inset: 0; }
 :host([multi]) .pill { min-width: 21rem; }
 .today { color: var(--hp-muted); }
-/* 多段日期时的滚轮：一段在正面，旁边几段转到侧面、渐隐 */
+/* Wheel for multiple date ranges: one range faces front, neighbouring ones turn to the sides and fade */
 .wheel {
   position: absolute;
   inset: 0 -6px;
@@ -132,7 +132,7 @@ const STYLE = /* css */ `
 }
 .btn:hover { background: color-mix(in srgb, var(--hp-fg) 10%, transparent); }
 .btn[hidden], .count[hidden] { display: none; }
-/* 按钮出现时淡入，不是一下子冒出来 */
+/* Buttons fade in when they appear rather than popping up */
 .btn, .count { animation: hp-in 0.25s ease-out; }
 @keyframes hp-in { from { opacity: 0; transform: scale(0.8); } }
 .panel {
@@ -154,13 +154,13 @@ const STYLE = /* css */ `
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value', 'min', 'max'];
 
 /**
- * <highlighter-picker>：预订网站用的日期框。
+ * <highlighter-picker>: a date field for booking sites.
  *
- * 平时是一个窄窄的框，写着今天的日期；点一下，它平滑地长大成荧光笔日历
- * （先是一个月加一叠卡，卡堆抖一下提示还能摆出更多月份），点外面或按 Esc 收回。
- * 选好以后框里写出日期段，比如「Nov 14 – Dec 11」；选了好几段时，
- * 框变成一个可以左右转的滚轮，把每一段都列出来。
- * 属性、input / change 事件和 <highlighter-calendar> 一样；另有 label 属性、open() / close() 方法。
+ * At rest it is a narrow field showing today's date; click it and it grows smoothly into the highlighter calendar
+ * (first one month plus a stack of cards, which wiggles to hint that more months can be laid out); click outside or press Esc to collapse it.
+ * Once dates are chosen the field shows the range, e.g. "Nov 14 – Dec 11"; with several ranges selected,
+ * the field becomes a wheel you can turn left and right, listing every range.
+ * Attributes and input / change events are the same as <highlighter-calendar>; it also has a label attribute and open() / close() methods.
  */
 export class HighlighterPicker extends HTMLElement {
   static observedAttributes = ['label', ...FORWARDED];
@@ -179,7 +179,7 @@ export class HighlighterPicker extends HTMLElement {
   private locale: string | undefined;
   private customLabel: string | null = null;
   private ranges: Range[] = [];
-  /** 滚轮转到的位置（第几段，可以是小数）。 */
+  /** Where the wheel has turned to (range index, may be fractional). */
   private pos = 0;
   private wheelAnim = 0;
   private drag: { id: number; x: number; pos: number; moved: boolean; t: number; lastX: number; vx: number } | null = null;
@@ -201,10 +201,10 @@ export class HighlighterPicker extends HTMLElement {
           </div>
         </div>
         <div class="side">
-          <button class="btn prev" type="button" aria-label="上一段" hidden>‹</button>
+          <button class="btn prev" type="button" aria-label="Previous range" hidden>‹</button>
           <span class="count" hidden></span>
-          <button class="btn next" type="button" aria-label="下一段" hidden>›</button>
-          <button class="btn clear" type="button" aria-label="清除" hidden>✕</button>
+          <button class="btn next" type="button" aria-label="Next range" hidden>›</button>
+          <button class="btn clear" type="button" aria-label="Clear" hidden>✕</button>
         </div>
       </div>
       <div class="panel" part="panel" role="dialog">
@@ -275,7 +275,7 @@ export class HighlighterPicker extends HTMLElement {
     this.render();
   }
 
-  // ---------- 公开 API ----------
+  // ---------- Public API ----------
 
   get value(): string[] {
     return this.deck.value;
@@ -318,10 +318,10 @@ export class HighlighterPicker extends HTMLElement {
     this.deck.clear();
   }
 
-  /** 从窄框平滑长成日历。 */
+  /** Grow smoothly from the narrow field into the calendar. */
   open(): void {
     if (this.isOpen) return;
-    // 有选中的日期就从滚轮正对着的那一段所在的月开始，否则从今天这个月开始
+    // With dates selected, start at the month of the range the wheel is facing; otherwise start at this month
     const r = this.ranges[Math.round(this.pos)];
     const now = new Date();
     this.deck.show(r ? r.start.slice(0, 7) : `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`);
@@ -350,11 +350,11 @@ export class HighlighterPicker extends HTMLElement {
         { duration: OPEN_MS + 120, easing: EASE },
       ),
     ];
-    // 长好以后卡堆抖一下，提示月份还能摆开
+    // Once grown, wiggle the card stack to hint that more months can be laid out
     this.anim[1].finished.then(() => this.isOpen && this.deck.hint()).catch(() => undefined);
   }
 
-  /** 倒着播一遍，收回成窄框。 */
+  /** Play it in reverse, collapsing back into the narrow field. */
   close(): void {
     if (!this.isOpen) return;
     const pill = this.$pill.getBoundingClientRect();
@@ -383,14 +383,14 @@ export class HighlighterPicker extends HTMLElement {
     else this.open();
   }
 
-  // ---------- 内部 ----------
+  // ---------- Internals ----------
 
   private stopAnim(): void {
     for (const a of this.anim) a.cancel();
     this.anim = [];
   }
 
-  /** 面板在窄框下面，水平方向尽量以窄框为中心，但不超出窗口。 */
+  /** The panel sits below the narrow field, horizontally centred on it where possible but never outside the window. */
   private positionPanel(): void {
     const host = this.getBoundingClientRect();
     const pill = this.$pill.getBoundingClientRect();
@@ -410,11 +410,11 @@ export class HighlighterPicker extends HTMLElement {
       ? parseFloat(getComputedStyle(document.documentElement).fontSize)
       : 1;
     const gap = parseFloat(cs.getPropertyValue('--deck-gap')) || 20;
-    // 两页纸（各带页边距）加上两侧给书签留的位置
+    // Two pages (each with margins) plus room on both sides for bookmarks
     return 2 * (card * unit + 36) + 80 + gap * 0;
   }
 
-  /** 面板收成窄框大小时的裁切和位移：刚好盖在窄框上。 */
+  /** Clip and offset for the panel collapsed to the narrow field's size: exactly covering the field. */
   private clipFrom(pill: DOMRect, panel: DOMRect): { clip: string; move: string } {
     const l = Math.max(0, pill.left - panel.left);
     const r = Math.max(0, panel.right - pill.right);
@@ -443,7 +443,7 @@ export class HighlighterPicker extends HTMLElement {
     const a = toDate(r.start);
     const b = toDate(r.end);
     const year = new Date().getFullYear();
-    // 中日韩用「9月15日」，其它语言用「Nov 14」这种短写
+    // CJK locales use the long month form (native month/day characters); other languages use a short form like "Nov 14"
     const lang = (this.locale ?? navigator.language ?? 'en').toLowerCase();
     const month = /^(zh|ja|ko)/.test(lang) ? 'long' : 'short';
     const opts: Intl.DateTimeFormatOptions =
@@ -453,13 +453,13 @@ export class HighlighterPicker extends HTMLElement {
     const fmt = new Intl.DateTimeFormat(this.locale ?? navigator.language, opts);
     if (r.start === r.end) return fmt.format(a);
     if (month === 'short') return fmt.formatRange(a, b);
-    // ICU 给中文的区间用的是「11/14 – 12/11」，这里自己拼成「11月14日 – 12月11日」
+    // ICU formats Chinese ranges as "11/14 – 12/11", so build the range by hand from the long-form dates instead
     const sameMonth = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
     const tail = sameMonth ? new Intl.DateTimeFormat(this.locale ?? navigator.language, { day: 'numeric' }).format(b) : fmt.format(b);
     return `${fmt.format(a)} – ${tail}`;
   }
 
-  /** 按当前选择刷新窄框：没选时写今天，选了一段写那一段，好几段就变成滚轮。 */
+  /** Refresh the narrow field for the current selection: today when nothing is selected, the range when there is one, a wheel when there are several. */
   private render(): void {
     this.$label.textContent = this.labelText();
     const ranges = toRanges(this.deck.value ?? []);
@@ -482,7 +482,7 @@ export class HighlighterPicker extends HTMLElement {
       this.$single.classList.remove('today');
       this.hinted = false;
     }
-    // 文字变了：旧的淡出、新的从下面淡入，不突然换掉
+    // The text changed: the old one fades out and the new one fades in from below, instead of swapping abruptly
     const shown = n >= 2 ? this.$wheel : this.$single;
     if (before !== null && before !== shown.textContent && this.isConnected) {
       shown.animate(
@@ -502,7 +502,7 @@ export class HighlighterPicker extends HTMLElement {
       }
       this.pos = Math.min(Math.max(0, Math.round(this.pos)), n - 1);
       this.layoutWheel();
-      // 第一次变成好几段时，滚轮自己晃一下，告诉用户可以转
+      // The first time it becomes several ranges, the wheel wobbles by itself to show it can be turned
       if (!this.hinted) {
         this.hinted = true;
         this.wiggleWheel();
@@ -524,7 +524,7 @@ export class HighlighterPicker extends HTMLElement {
     this.$count.textContent = `${Math.round(this.pos) + 1}/${n}`;
   }
 
-  /** 平滑转到第 i 段（转到头会轻轻弹回来）。 */
+  /** Turn smoothly to range i (bouncing back gently at either end). */
   private rotateTo(i: number, ms = 420): void {
     const n = this.ranges.length;
     if (n < 2) return;
@@ -561,7 +561,7 @@ export class HighlighterPicker extends HTMLElement {
     this.wheelAnim = requestAnimationFrame(tick);
   }
 
-  // ---------- 窄框上的手势：点一下打开，左右拖转滚轮 ----------
+  // ---------- Gestures on the narrow field: click to open, drag sideways to turn the wheel ----------
 
   private onDown(e: PointerEvent): void {
     if ((e.target as HTMLElement).closest('button')) return;
@@ -580,14 +580,14 @@ export class HighlighterPicker extends HTMLElement {
       try {
         this.$pill.setPointerCapture(e.pointerId);
       } catch {
-        // 合成事件没有真实指针
+        // Synthetic events have no real pointer
       }
     }
     const dt = Math.max(1, e.timeStamp - d.t);
     d.vx = d.vx * 0.5 + ((e.clientX - d.lastX) / dt) * 0.5;
     d.lastX = e.clientX;
     d.t = e.timeStamp;
-    // 手指往左拖，滚轮往后转（露出后面的日期段）
+    // Dragging left turns the wheel forward (revealing later ranges)
     this.pos = d.pos - dx / 70;
     this.layoutWheel();
   }
@@ -600,7 +600,7 @@ export class HighlighterPicker extends HTMLElement {
       this.toggle();
       return;
     }
-    // 松手：顺着甩的方向多转一点，停在最近的一段
+    // On release: carry on a little in the direction of the flick and settle on the nearest range
     this.rotateTo(Math.round(this.pos - d.vx * 1.5));
   }
 

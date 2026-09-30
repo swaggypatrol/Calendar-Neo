@@ -1,7 +1,19 @@
 {
-  "name": "highlighter-calendar",
+  "name": "calendar-neo",
   "version": "0.1.0",
-  "description": "像荧光笔一样划选日期的日历 Web Component：左键涂、右键擦，每个日期 8x8 格子，超过阈值即选中。",
+  "description": "A date picker you paint, not click: highlighter-style date selection as framework-free Web Components.",
+  "keywords": [
+    "date-picker",
+    "calendar",
+    "web-components",
+    "highlighter",
+    "booking"
+  ],
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swaggypatrol/Calendar-Neo.git"
+  },
   "type": "module",
   "main": "./dist/highlighter-calendar.umd.cjs",
   "module": "./dist/highlighter-calendar.js",
@@ -24,7 +36,6 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "license": "MIT",
   "devDependencies": {
     "typescript": "^7.0.2",
     "vite": "^8.3.1",

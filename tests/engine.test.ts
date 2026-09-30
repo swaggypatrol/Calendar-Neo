@@ -5,7 +5,7 @@ const W = 48;
 const H = 42;
 const GAP = 4;
 
-/** 5 行 x 7 列的假布局，key 为 "r{row}c{col}"。 */
+/** Fake 5-row x 7-column layout; keys are "r{row}c{col}". */
 function layout(): RowLayout[] {
   const rows: RowLayout[] = [];
   for (let r = 0; r < 5; r++) {
@@ -47,8 +47,8 @@ function holdUntil(e: HighlighterEngine, phase: string) {
 
 const painted = (e: HighlighterEngine, key: string) => e.state(key)!.mask.reduce((a, b) => a + b, 0);
 
-describe('划选', () => {
-  it('横着划过三天的中间，三天都被选中，上下排不受影响', () => {
+describe('stroke selection', () => {
+  it('sweeping horizontally across the middle of three days selects all three and leaves adjacent rows alone', () => {
     const e = engine();
     e.beginStroke('highlight', cx(1) - W / 2 + 2, cy(2));
     e.moveTo(cx(3) + W / 2 - 2, cy(2));
@@ -56,7 +56,7 @@ describe('划选', () => {
     expect(e.value).toEqual(['r2c1', 'r2c2', 'r2c3']);
   });
 
-  it('贴着格子顶边划过不会选中', () => {
+  it('a stroke grazing the top edge of the cells selects nothing', () => {
     const e = engine();
     e.beginStroke('highlight', cx(0) - W / 2, cy(1) - H * 0.42);
     e.moveTo(cx(4), cy(1) - H * 0.42);
@@ -64,7 +64,7 @@ describe('划选', () => {
     expect(e.value).toEqual([]);
   });
 
-  it('只划了一小半的日期松手后会被清掉', () => {
+  it('a day only partly painted is cleared on release', () => {
     const e = engine();
     e.beginStroke('highlight', cx(0) - W / 2, cy(0));
     e.moveTo(cx(1) - W * 0.2, cy(0));
@@ -75,16 +75,16 @@ describe('划选', () => {
     expect(painted(e, 'r0c0')).toBe(CELLS);
   });
 
-  it('跨行斜着划，只涂笔尖所在那一行', () => {
+  it('a stroke crossing rows only paints the row under the brush', () => {
     const e = engine();
     e.beginStroke('highlight', cx(2), cy(0));
     e.moveTo(cx(2), cy(3));
     e.endStroke();
-    // 竖着划过的格子涂到的只是窄窄一列，不够阈值
+    // A vertical pass only paints a narrow column in each cell, below the threshold
     expect(e.value).toEqual([]);
   });
 
-  it('阈值可调', () => {
+  it('threshold is adjustable', () => {
     const e = engine(10);
     e.beginStroke('highlight', cx(0) - W / 2, cy(0) - H * 0.42);
     e.moveTo(cx(0) + W / 2, cy(0) - H * 0.42);
@@ -93,8 +93,8 @@ describe('划选', () => {
   });
 });
 
-describe('长按扩散', () => {
-  it('按在日期中间不动：只填满这一天', () => {
+describe('hold to spread', () => {
+  it('holding in the middle of a day fills only that day', () => {
     const e = engine();
     e.beginStroke('highlight', cx(3), cy(1));
     e.startHold(cx(3), cy(1));
@@ -103,9 +103,9 @@ describe('长按扩散', () => {
     expect(e.value).toEqual(['r1c3']);
   });
 
-  it('按在两个数字之间：先洇到邻格一半停住，继续按住才选中邻格', () => {
+  it('holding between two numbers bleeds halfway into the neighbour, then selects it if held longer', () => {
     const e = engine();
-    const x = cx(3) + W / 2 - 3; // 靠近右边缘
+    const x = cx(3) + W / 2 - 3; // near the right edge
     e.beginStroke('highlight', x, cy(1));
     e.startHold(x, cy(1));
     holdUntil(e, 'pause');
@@ -122,9 +122,9 @@ describe('长按扩散', () => {
     expect(e.value).toEqual(['r1c3', 'r1c4']);
   });
 
-  it('洇到一半就松手：邻格不选中并被清掉', () => {
+  it('releasing at the halfway point leaves the neighbour unselected and cleared', () => {
     const e = engine();
-    const x = cx(3) - W / 2 + 3; // 靠近左边缘
+    const x = cx(3) - W / 2 + 3; // near the left edge
     e.beginStroke('highlight', x, cy(1));
     e.startHold(x, cy(1));
     holdUntil(e, 'pause');
@@ -135,8 +135,8 @@ describe('长按扩散', () => {
   });
 });
 
-describe('橡皮擦', () => {
-  it('右键划过已选日期会取消选中，逻辑与涂色对称', () => {
+describe('eraser', () => {
+  it('right-dragging over selected days deselects them, mirroring highlight', () => {
     const e = engine();
     e.setSelection(['r0c0', 'r0c1', 'r0c2']);
     e.beginStroke('erase', cx(0) - W / 2, cy(0));
@@ -146,7 +146,7 @@ describe('橡皮擦', () => {
     expect(painted(e, 'r0c2')).toBe(CELLS);
   });
 
-  it('擦了一点没到阈值，松手后恢复满格', () => {
+  it('erasing below the threshold restores the full cell on release', () => {
     const e = engine();
     e.setSelection(['r0c0']);
     e.beginStroke('erase', cx(0) - W / 2, cy(0));
@@ -157,7 +157,7 @@ describe('橡皮擦', () => {
     expect(e.value).toEqual(['r0c0']);
   });
 
-  it('单击：左键选中、右键取消', () => {
+  it('tap: left click selects, right click deselects', () => {
     const e = engine();
     e.beginStroke('highlight', cx(5), cy(4));
     expect(e.tap(cx(5), cy(4))).toBe(true);

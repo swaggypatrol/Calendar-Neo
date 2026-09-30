@@ -1,91 +1,110 @@
-# 荧光笔日历（Calendar Neo）
+# Calendar Neo
 
-像拿荧光笔一样在日历上划过想要的日子，不用再点起止日期。做成了 Web Component `<highlighter-calendar>`，任何网页、React / Vue / 原生页面都能直接用。
+**English** · [简体中文](README.zh-CN.md)
 
-## 交互
+> A date picker you paint, not click. Swipe a highlighter across the days you want, and it figures out the rest. Scribblers, zig-zaggers, and people who hold the pen still for no reason: you'll all get your dates.
 
-- 左键 / 手指划过：涂色。每个日期背后是 8x8 的小格，被涂到 `threshold`（默认 35）格就算选中。
-- 右键划过（或笔的橡皮头）：橡皮擦，同样的逻辑反过来。触屏可以把 `tool` 设成 `erase`。
-- 按住不动：墨水在笔尖下洇开变深；停得够久，这一天会被自动"划"一笔选中。按在两个数字中间时，先洇到旁边那天的一半，继续按住才一起选中。扩散只在同一行，不会跑到上下排。
-- 来回涂：每一遍叠加变深，到上限就不再变深。
-- 单击：直接选中（右键单击取消）。键盘：方向键移动，空格 / 回车切换，PageUp / PageDown 翻月。
-- 松手时，没达到阈值的日期上的墨迹会淡出；划得不完整的已选日期会顺着方向自动补完那一笔。
-- 画的时候可以涂在格子里任何地方；松笔后笔画会自然地挪进以日期数字为中心、高度 0.618 格的窄带，并在底下垫一笔补齐空隙，看起来整齐统一。
+Calendar Neo is a set of framework-free Web Components. Instead of picking a start date and an end date, you draw over the days you want with a highlighter, as you would on a paper calendar. It works with a mouse, a finger or a pen, and drops into plain HTML, React, Vue or anything else that renders DOM.
 
-选择结果就是一组日期，连续、组合、错开都可以。
+The result is simply a list of dates, so continuous ranges, several ranges and scattered single days all work the same way.
 
-## 多个月：`<highlighter-deck>`
+## Components
 
-同屏最多并排两个月。在空白处按住横着拖，手底下的卡片跟着手指走：往左拖，下个月从卡堆里出来补上空出来的位置；往右拖，上个月从左边卡堆里滑进来。一次拖动只翻一张，连着快速划进入有阻尼的转盘。点一下空白处收回成一张，留下点中的那个月。所有卡片共享同一份选择。
+| Element | What it is |
+| --- | --- |
+| `<highlighter-calendar>` | One month you can paint on. The core of everything else. |
+| `<highlighter-book>` | An open paper calendar: two months side by side, pages printed on both sides, turned with a soft page curl. |
+| `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
+| `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
 
-## 纸质日历：`<highlighter-book>`
+## How painting works
 
-一本打开的纸质日历：左右两页各一个月，每张纸正反两面都印着月份，任何时候都摊开两个月。沿中缝翻页，像真书一样从页角把纸掀起来折过去：
+- **Swipe with the left button or a finger** to highlight. Behind every date is an 8×8 grid of cells; once enough of them are painted (`threshold`, default 35 of 64) the date is selected.
+- **Swipe with the right button** (or a pen's eraser end) to erase, which is the same logic in reverse. On touch screens, set `tool="erase"`.
+- **Hold still** and the ink soaks in and darkens under the pen. Hold long enough and the day gets a stroke drawn across it. Pressing between two numbers bleeds halfway into the neighbour first, and keeps going only if you keep holding. Bleeding never crosses into the row above or below.
+- **Go back and forth** over the same spot and the colour builds up, to a limit.
+- **Paint anywhere** in a cell while drawing. When you lift the pen, the strokes glide into a tidy band centred on the date numbers (0.618 of the cell height), with a clean pass laid underneath, so the result looks consistent.
+- Dates that didn't reach the threshold fade out when you lift the pen. Selected dates that were only partly covered get their stroke finished for you.
+- **Click** a date to select it (right-click to clear it). Keyboard: arrow keys move, Space / Enter toggle, PageUp / PageDown change month.
 
-- 在日期格子以外的空白处按住往左拖，右页跟着手指翻过去；往右拖，左页翻回来。拖过一小段或轻轻一甩就翻过去，否则落回原处。连着快速划会一页接一页地翻。点页角的折角也能翻。
-- 选过日子的月份，那张纸在书口伸出一枚书签，按月份排在书口不同高度；翻过去的在左边，还没翻到的在右边。书签上写着那个月选了几天（1 到 5+）。点书签直接翻到那个月，这时书签就夹进页面里，从页顶垂下来。
-- 书口露出的纸边最多 4 道，只表示两边还有没有纸，不会越翻越厚。
-- 已经过去的月份印着一圈暗角。
+## The paper calendar: `<highlighter-book>`
 
-## 预订日期框：`<highlighter-picker>`
+- Two months are always open, one per page. Each sheet is printed on both sides, like a real book.
+- **Turn pages** by dragging on any blank area (outside the date grid): drag left and the right page peels up from its corner and follows your finger; drag right to turn back. Drag past about a third, or flick, and it turns; otherwise it settles back. Swipe quickly several times and it riffles through pages. The dog-eared corners can be clicked too.
+- **Bookmarks** replace any kind of glow. Every month with selected days gets a bookmark tab on the fore-edge, placed at a height that depends on the month, showing how many days you picked there (1 to 5+). Months you have already turned past sit on the left, months ahead sit on the right. Click a tab to turn straight to that month, and the tab slides into the page as a hanging ribbon.
+- Past months are printed with a soft vignette.
+- Everything animates. Nothing jumps.
 
-平时是一个窄框，写着今天的日期。点一下，它平滑地长大成纸质日历，右页页角翘起来抖一下提示可以翻页。点外面或按 Esc 收回。选好后框里写出日期段（如 Nov 14 – Dec 11 / 11月14日 – 12月11日）；选了好几段时变成滚轮，左右拖、滚动或点箭头来转，点一下就打开到那一段所在的月份。
+## The booking field: `<highlighter-picker>`
 
-## 预约版：只能选未来
+A narrow pill that shows today's date. Click it and it grows smoothly into the paper calendar, and the corner of the right page lifts a little to hint that it can be turned. Click outside or press Esc to fold it back.
 
-给客户预约用时加上 `min="today"`：今天以前的日子灰掉，笔刷划过去不留墨、不会选中；从上周一路划到下周也没关系，过去的那几天自动跳过。卡片流翻不回过去的月份，到头再拖只会带着阻尼挪一点，松手弹回。
+Once you've picked dates, the pill shows them, for example `Nov 14 – Dec 11`. Pick more than one range and it becomes a small wheel you can drag, scroll or step through; clicking it opens the calendar at that range.
 
-预约版的卡片流是触屏式的：在空白处按住横着拖，手底下的卡片跟着手指走；往左拖，下个月从卡堆里出来补上空出来的位置，往右拖，上个月从左边滑进来。同屏最多并排两个月。一次拖动只翻一张，拖过一小段或轻轻一甩松手就翻过去，否则弹回；连着快速划进入有阻尼的转盘。点一下空白处收回成一张，留下点中的那个月。
+## Future-only booking
+
+Add `min="today"` (and optionally `max`) for customer bookings. Days outside the range are greyed out and the highlighter leaves no ink on them, so you can drag from last week into next week and the past days are simply skipped. The book won't turn to months that are entirely out of range.
 
 ```html
-<highlighter-deck min="today" max="+90"></highlighter-deck>
+<highlighter-picker min="today" max="+90"></highlighter-picker>
 ```
 
-`min` / `max` 可以写 `today`、`tomorrow`、`+N`（N 天后）或 `YYYY-MM-DD`。相对写法每次重画时按当天日期重新换算。`<highlighter-calendar>` 和 `<highlighter-deck>` 都支持；范围外的已选日期会被去掉并触发 `change`。
+`min` / `max` accept `today`, `tomorrow`, `+N` (N days from today) or `YYYY-MM-DD`. Relative values are re-evaluated whenever the calendar redraws. Selected dates that fall outside the range are removed and a `change` event fires.
 
-## 运行演示
-
-```bash
-npm install
-npm run dev      # 打开 http://localhost:5173
-npm run dev:booking  # 预约版演示 http://localhost:5173/booking.html
-npm test         # 选择逻辑的单元测试
-npm run build    # 打包到 dist/
-```
-
-## 用法
+## Usage
 
 ```html
 <script type="module" src="highlighter-calendar.js"></script>
-<highlighter-calendar month="2026-09" threshold="35" week-start="1"></highlighter-calendar>
+
+<highlighter-picker week-start="1" color="#ffd21f"></highlighter-picker>
+
 <script>
-  const cal = document.querySelector('highlighter-calendar');
-  cal.addEventListener('change', (e) => console.log(e.detail.value)); // ['2026-09-03', ...]
-  cal.value = ['2026-09-10', '2026-09-11'];
+  const picker = document.querySelector('highlighter-picker');
+  picker.addEventListener('change', (e) => console.log(e.detail.value)); // ['2026-09-03', ...]
+  picker.value = ['2026-09-10', '2026-09-11'];
 </script>
 ```
 
-| 属性 / 属性名 | 说明 |
+All components share these attributes:
+
+| Attribute | Meaning |
 | --- | --- |
-| `month` | 显示的月份，`YYYY-MM` |
-| `threshold` | 64 个小格里涂到多少算选中，默认 35 |
-| `week-start` | `1` 周一开始（默认），`0` 周日开始 |
-| `locale` | 月份和星期的语言，默认跟随浏览器 |
-| `color` | 荧光笔颜色，默认 `#ffd21f` |
-| `tool` | 左键 / 触摸的工具：`highlight`（默认）或 `erase` |
-| `brush-size` | 笔头大小倍数，0.5–2 |
-| `hold-delay` | 停笔多久（毫秒）开始判定长按，默认 320 |
-| `value` | 初始选中日期，逗号分隔 |
+| `month` | Month to show, `YYYY-MM` (for the book: the left page) |
+| `threshold` | How many of the 64 cells must be painted to select a date, default 35 |
+| `week-start` | `1` Monday first (default), `0` Sunday first |
+| `locale` | Language for month and weekday names, defaults to the browser |
+| `color` | Highlighter colour, default `#ffd21f` |
+| `tool` | Tool for the left button / touch: `highlight` (default) or `erase` |
+| `brush-size` | Brush size multiplier, 0.5–2 |
+| `hold-delay` | How long (ms) the pen must rest before it counts as holding, default 320 |
+| `value` | Initially selected dates, comma separated |
+| `min`, `max` | Selectable range (see above) |
 
-事件：`input`（划的过程中每选中 / 取消一天）、`change`（松手后有变化时），`detail` 为 `{ value, added, removed }`；`monthchange`（翻月）。方法：`clear()`、`shiftMonth(n)`。
+Events: `input` (fires as each day is selected or cleared while drawing) and `change` (after you lift the pen, if anything changed), both with `detail: { value, added, removed }`; `monthchange` when the visible month changes.
 
-## 代码结构
+Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the picker `open()` / `close()`.
 
-- `src/engine.ts`：选择逻辑（8x8 小格、阈值、长按扩散、橡皮擦），不依赖 DOM，有单元测试。
-- `src/ink.ts`：笔触画面（刷毛、拉丝、叠加变深、淡出、自动补笔动画）。
-- `src/calendar.ts`：Web Component，把两者接到指针、键盘和日历网格上。
-- `src/deck.ts`：多月份卡片叠放 / 摊开。
-- `src/book.ts`：纸质日历（两页、翻页、书签）。
-- `src/picker.ts`：预订日期框（窄框、展开动画、日期段滚轮）。
-- `src/range.ts`：可选范围（min / max）。
-- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：预约版演示页。
+## Running the demo
+
+```bash
+npm install
+npm run dev          # http://localhost:5173
+npm run dev:booking  # future-only demo: http://localhost:5173/booking.html
+npm test             # unit tests for the selection logic
+npm run build        # library build into dist/
+```
+
+## Project layout
+
+- `src/engine.ts`: selection logic (8×8 cells, threshold, hold-to-bleed, eraser). No DOM, unit tested.
+- `src/ink.ts`: the highlighter look (bristles, streaks, layering, fading, settling into the band, auto-completed strokes).
+- `src/calendar.ts`: the `<highlighter-calendar>` element, wiring the two to pointer, keyboard and the month grid.
+- `src/book.ts`: the paper calendar (two pages, page curl, bookmarks).
+- `src/picker.ts`: the booking field (pill, grow animation, range wheel).
+- `src/deck.ts`: the card-stack layout.
+- `src/range.ts`: `min` / `max` handling.
+- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo.
+
+## License
+
+[Mozilla Public License 2.0](LICENSE).

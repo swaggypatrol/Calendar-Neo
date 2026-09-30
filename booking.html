@@ -1,67 +1,67 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>预约日历 · Calendar Neo</title>
+    <title>Booking Calendar · Calendar Neo</title>
     <link rel="stylesheet" href="/demo/style.css" />
   </head>
   <body>
     <main>
       <section class="intro">
-        <h1>预约日历</h1>
-        <p>给客户预约用：已经过去的日子灰掉，笔划过去也不会留墨、不会选中，只能约今天以后的日子。</p>
+        <h1>Booking Calendar</h1>
+        <p>For customer bookings: past days are greyed out, the pen leaves no ink on them and cannot select them, so only today and later can be booked.</p>
         <ul>
-          <li><b>左键 / 手指划过</b>：涂色选中，一个日期被涂满 35/64 格就算约上。从上周一路划到下周也没关系，过去的那几天会被自动跳过。</li>
-          <li><b>右键划过</b>：橡皮擦，取消预约。</li>
-          <li><b>按住不动</b>：停在某天上够久，这一天会被一笔划过选中；按在今天和昨天中间，不会洇到昨天。</li>
-          <li><b>多个月</b>：在卡片空白处（比如标题栏）按住横着拖，卡片跟着手指走。往左拖，卡片滑开，下个月从卡堆里出来补上；往右拖，上个月从左边滑进来。同屏最多并排两个月。本月已经是最早的，往右拖只会带着阻尼挪一点，松手弹回。连着快速划会像转盘一样转过好几个月。点一下空白处收回成一张。</li>
+          <li><b>Left-drag / swipe</b>: paint to select; a day is booked once 35/64 of its cells are painted. It is fine to sweep from last week straight through to next week: past days are skipped automatically.</li>
+          <li><b>Right-drag</b>: eraser, cancels a booking.</li>
+          <li><b>Press and hold</b>: hold on a day long enough and it is selected in one sweep; holding between today and yesterday never bleeds into yesterday.</li>
+          <li><b>Multiple months</b>: press on empty space on the card (such as the header) and drag sideways, and the card follows your finger. Drag left and the card slides away as next month comes out of the stack; drag right and the previous month slides in from the left. Up to two months show side by side. The current month is the earliest, so dragging right only moves a little with resistance and springs back on release. Quick repeated swipes spin through several months like a dial. Tap empty space to collapse back to a single card.</li>
         </ul>
       </section>
 
       <section class="stage">
-        <highlighter-deck id="cal" min="today"></highlighter-deck>
+        <highlighter-deck id="cal" min="today" locale="en-US"></highlighter-deck>
 
         <div class="panel">
           <div class="field">
-            <label>最早可约</label>
+            <label>Earliest booking</label>
             <div class="seg" id="min">
-              <button data-min="today" class="on">今天</button>
-              <button data-min="tomorrow">明天</button>
-              <button data-min="+3">3 天后</button>
+              <button data-min="today" class="on">Today</button>
+              <button data-min="tomorrow">Tomorrow</button>
+              <button data-min="+3">In 3 days</button>
             </div>
           </div>
           <div class="field">
-            <label>最多提前</label>
+            <label>Book up to</label>
             <div class="seg" id="max">
-              <button data-max="" class="on">不限</button>
-              <button data-max="+60">60 天</button>
-              <button data-max="+180">180 天</button>
+              <button data-max="" class="on">No limit</button>
+              <button data-max="+60">60 days</button>
+              <button data-max="+180">180 days</button>
             </div>
           </div>
           <div class="field">
-            <label>触屏工具</label>
+            <label>Touch tool</label>
             <div class="seg" id="tool">
-              <button data-tool="highlight" class="on">荧光笔</button>
-              <button data-tool="erase">橡皮擦</button>
+              <button data-tool="highlight" class="on">Highlighter</button>
+              <button data-tool="erase">Eraser</button>
             </div>
           </div>
           <div class="field">
-            <label>颜色</label>
+            <label>Color</label>
             <div class="swatches" id="colors">
-              <button style="--c: #ffd21f" data-color="#ffd21f" class="on" aria-label="黄"></button>
-              <button style="--c: #7ef08a" data-color="#7ef08a" aria-label="绿"></button>
-              <button style="--c: #ff8fc8" data-color="#ff8fc8" aria-label="粉"></button>
-              <button style="--c: #7cc8ff" data-color="#7cc8ff" aria-label="蓝"></button>
+              <button style="--c: #ffd21f" data-color="#ffd21f" class="on" aria-label="Yellow"></button>
+              <button style="--c: #7ef08a" data-color="#7ef08a" aria-label="Green"></button>
+              <button style="--c: #ff8fc8" data-color="#ff8fc8" aria-label="Pink"></button>
+              <button style="--c: #7cc8ff" data-color="#7cc8ff" aria-label="Blue"></button>
             </div>
           </div>
-          <button id="clear" class="clear">全部清除</button>
+          <button id="clear" class="clear">Clear all</button>
         </div>
       </section>
 
       <section class="out">
-        <h2>已约 <span id="count">0</span> 天</h2>
-        <p id="ranges" class="ranges">还没有选日期</p>
+        <h2><span id="count">0</span> days booked</h2>
+        <p id="ranges" class="ranges">No dates selected yet</p>
         <pre id="json">[]</pre>
       </section>
     </main>

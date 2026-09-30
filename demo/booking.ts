@@ -20,14 +20,16 @@ pick('tool', 'tool', (v) => (cal.tool = v as 'highlight' | 'erase'));
 pick('colors', 'color', (v) => (cal.color = v));
 $('clear').addEventListener('click', () => cal.clear());
 
-/** 把日期列表合并成区间显示：10月3日 – 10月6日、10月10日 */
+const dayFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
+
+/** Merge a list of dates into ranges for display: Oct 3 – Oct 6, Oct 10 */
 function ranges(keys: string[]): string {
-  if (!keys.length) return '还没有选日期';
+  if (!keys.length) return 'No dates selected yet';
   const days = keys.map((k) => {
     const [y, m, d] = k.split('-').map(Number);
     return new Date(y, m - 1, d);
   });
-  const fmt = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
+  const fmt = (d: Date) => dayFmt.format(d);
   const out: string[] = [];
   let start = days[0];
   let prev = days[0];
@@ -39,7 +41,7 @@ function ranges(keys: string[]): string {
     out.push(start === prev ? fmt(start) : `${fmt(start)} – ${fmt(prev)}`);
     if (d) start = prev = d;
   }
-  return out.join('、');
+  return out.join(', ');
 }
 
 function show(value: string[]) {

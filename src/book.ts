@@ -2,18 +2,18 @@ import type { HighlighterCalendar } from './calendar';
 import type { Tool } from './engine';
 import { DayRange } from './range';
 
-/** 翻一页的时长；连着翻（点书签、快速划）时每页更快。 */
+/** How long one page turn takes; turns in a row (clicking a bookmark, quick swipes) go faster per page. */
 const FLIP_MS = 680;
 const RIFFLE_MS = 300;
-/** 松手时翻过了多少就翻过去，否则落回原处；甩得够快也算。 */
+/** On release, turn the page if it has gone this far, otherwise fall back; a fast enough flick also counts. */
 const COMMIT = 0.3;
 const FLICK_SPEED = 0.35;
-/** 手指横向移动多少像素开始算拖动。 */
+/** How many pixels the finger must move sideways before it counts as a drag. */
 const DRAG_PX = 6;
-/** 书口两侧显示页边的最远范围（离今天的月数）。 */
+/** How far out (in months from today) the page edges are shown along the fore-edges. */
 const HORIZON = 24;
 
-/** 页角被掀起时往上（或往下）拱起的高度，占页高的比例。 */
+/** How far a lifted page corner bulges up (or down), as a fraction of the page height. */
 const LIFT = 0.22;
 
 interface Pt {
@@ -25,7 +25,7 @@ const sub = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
 const dot = (a: Pt, b: Pt) => a.x * b.x + a.y * b.y;
 const len = (a: Pt) => Math.hypot(a.x, a.y);
 
-/** 用一条直线把多边形切开，留下 keep(点) >= 0 的那一半。 */
+/** Cut a polygon with a straight line, keeping the half where keep(point) >= 0. */
 function clipPoly(poly: Pt[], side: (p: Pt) => number): Pt[] {
   const out: Pt[] = [];
   for (let i = 0; i < poly.length; i++) {
@@ -104,7 +104,7 @@ const STYLE = /* css */ `
 .page { transition: box-shadow 0.45s; }
 .page.left { box-shadow: var(--edges-left, none), -6px 14px 28px -10px var(--hb-shadow); }
 .page.right { box-shadow: var(--edges-right, none), 6px 14px 28px -10px var(--hb-shadow); }
-/* 中缝：靠近装订处的阴影 */
+/* Gutter: the shadow near the binding */
 .gutter {
   position: absolute;
   inset: 0;
@@ -113,7 +113,7 @@ const STYLE = /* css */ `
 }
 .shape-l .gutter { background: linear-gradient(to left, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
 .shape-r .gutter { background: linear-gradient(to right, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
-/* 翻页时的光影：沿折线的一条渐变。页面上是被掀起的纸投下的影子，纸上是折起来的弧面的明暗 */
+/* Light and shade while turning: a gradient along the fold line. On the page below it is the shadow cast by the lifted sheet; on the sheet it is the shading of the curled surface */
 .fx {
   position: absolute;
   inset: 0;
@@ -129,7 +129,7 @@ const STYLE = /* css */ `
   transform-origin: 0 0;
   visibility: hidden;
 }
-/* 翻着的那张纸：正面留在原处、沿折线裁掉折起来的部分；背面按折线镜像过去盖在上面 */
+/* The sheet being turned: the front stays in place, clipped along the fold line to drop the folded part; the back is mirrored across the fold line and laid on top */
 .turn {
   position: absolute;
   top: 0;
@@ -157,7 +157,7 @@ highlighter-calendar {
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
 }
-/* 书口的折角：鼠标移上去翘起来，点一下翻页 */
+/* Dog-ear on the fore-edge: lifts on hover, click to turn the page */
 .corner {
   position: absolute;
   bottom: 30px;
@@ -185,8 +185,8 @@ highlighter-calendar {
 .corner:hover::before { width: 24px; height: 24px; }
 .corner { transition: opacity 0.3s; }
 .corner[disabled] { opacity: 0; pointer-events: none; }
-/* 书签：一个月一枚，始终是同一个元素。没翻到时从书口伸出来；翻到这一页时滑进页里，
-   变成从页顶垂下来的燕尾丝带。所有变化都用过渡动画，不会瞬移 */
+/* Bookmarks: one per month, always the same element. When its page isn't open it sticks out from the fore-edge; when
+   its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
 .mark {
   position: absolute;
   z-index: 6;
@@ -214,9 +214,9 @@ highlighter-calendar {
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
 
 /**
- * 一次翻页。几何都在"镜像坐标"里算：原点在中缝顶端，翻着的那页总是在右边 x∈[0,W]；
- * 往前翻（dir=-1）时整个左右镜像一下。corner 是被掀起的页角，P 是页角现在被拉到的位置，
- * 纸沿 C、P 连线的垂直平分线折过去。
+ * One page turn. All geometry is computed in "mirrored coordinates": the origin is at the top of the gutter and the turning page is always on the right, x∈[0,W];
+ * turning backwards (dir=-1) mirrors everything left to right. corner is the lifted page corner, P is where that corner has been pulled to,
+ * and the sheet folds along the perpendicular bisector of C and P.
  */
 interface Flip {
   dir: 1 | -1;
@@ -226,15 +226,15 @@ interface Flip {
 }
 
 /**
- * <highlighter-book>：一本打开的纸质日历。左右两页，每张纸正反两面都印着月份，
- * 所以任何时候都同时摊开两个月；沿中缝翻页，有翻页效果。
+ * <highlighter-book>: an open paper calendar. Two facing pages, with a month printed on each side of every sheet,
+ * so two months are always open at once; pages turn along the gutter with a page-turn effect.
  *
- * - 在日期格子以外的空白处按住往左拖，右页跟着手指翻过去；往右拖，左页翻回来。
- *   拖过一小段或轻轻一甩就翻过去，否则落回原处。连着快速划会一页接一页地翻。
- * - 点页角的折角也能翻页。
- * - 有选中日子的月份，那张纸在书口伸出一枚书签（按月份排在书口不同高度），点书签直接翻到那个月。
- * - 已经过去的月份印着一圈暗角。
- * 属性和 input / change 事件与 <highlighter-calendar> 相同；另有 month（左页的月份）、next() / prev()。
+ * - Press on blank space (outside the day cells) and drag left: the right page follows your finger over; drag right and the left page turns back.
+ *   Drag a short way or give a light flick to turn the page, otherwise it falls back. Quick swipes in a row turn page after page.
+ * - Clicking the dog-ear on a page corner also turns the page.
+ * - A month with selected days sticks a bookmark out of the fore-edge (at a different height per month); click it to jump to that month.
+ * - Months already past are printed with a vignette.
+ * Attributes and input / change events are the same as <highlighter-calendar>; it also has month (the left page's month) and next() / prev().
  */
 export class HighlighterBook extends HTMLElement {
   static observedAttributes = ['month', 'value', ...FORWARDED];
@@ -246,15 +246,15 @@ export class HighlighterBook extends HTMLElement {
   private $front: HTMLElement;
   private $back: HTMLElement;
   private $pool: HTMLElement;
-  /** 每个有选择的月份一枚书签（月份序号 → 元素）。 */
+  /** One bookmark for each month with a selection (month index → element). */
   private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
   private pages: HighlighterCalendar[] = [];
-  /** 左页的月份（月份序号 = 年 * 12 + 月）。右页是 m + 1。 */
+  /** The left page's month (month index = year * 12 + month). The right page is m + 1. */
   private m: number;
   private flip: Flip | null = null;
-  /** 翻页过程中收到的后续翻页。 */
+  /** Page turns requested while a turn is in progress. */
   private queue: (1 | -1)[] = [];
   private raf = 0;
   private hintRaf = 0;
@@ -281,8 +281,8 @@ export class HighlighterBook extends HTMLElement {
           <div class="turn front"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div></div>
         </div>
-        <button class="corner prev" type="button" aria-label="上一页"></button>
-        <button class="corner next" type="button" aria-label="下一页"></button>
+        <button class="corner prev" type="button" aria-label="Previous page"></button>
+        <button class="corner next" type="button" aria-label="Next page"></button>
         <div class="pool" aria-hidden="true"></div>
       </div>`;
     const q = <T extends Element>(s: string) => root.querySelector(s) as T;
@@ -352,7 +352,7 @@ export class HighlighterBook extends HTMLElement {
     }
   }
 
-  // ---------- 公开 API ----------
+  // ---------- Public API ----------
 
   get value(): string[] {
     return [...this.selection];
@@ -364,7 +364,7 @@ export class HighlighterBook extends HTMLElement {
     this.selectionChanged();
   }
 
-  /** 左页的月份，YYYY-MM。 */
+  /** The left page's month, YYYY-MM. */
   get month(): string {
     return keyOf(this.m);
   }
@@ -409,17 +409,17 @@ export class HighlighterBook extends HTMLElement {
     );
   }
 
-  /** 往后翻一页（右页翻到左边）。 */
+  /** Turn forward one page (the right page turns over to the left). */
   next(): void {
     this.request(1);
   }
 
-  /** 往前翻一页（左页翻回右边）。 */
+  /** Turn back one page (the left page turns back to the right). */
   prev(): void {
     this.request(-1);
   }
 
-  /** 直接摊开到某个月在左页，不播动画。 */
+  /** Open straight to a given month on the left page, without animation. */
   show(month: string): void {
     const k = parseKey(month);
     if (k === null) return;
@@ -432,7 +432,7 @@ export class HighlighterBook extends HTMLElement {
     this.layout(true);
   }
 
-  /** 右页的页角翘起来抖两下，提示可以翻页。 */
+  /** Lift the right page's corner and wiggle it twice to hint that pages can be turned. */
   hint(): void {
     if (this.flip || this.gesture || this.hintRaf || !this.canFlip(1)) return;
     this.beginFlip(1, false);
@@ -444,7 +444,7 @@ export class HighlighterBook extends HTMLElement {
         if (this.flip && !this.flip.anim) this.finishFlip(false);
         return;
       }
-      // 页角翘起来一点再落下，像被风掀了两下
+      // The corner lifts a little and drops again, as if flicked twice by the wind
       const k = Math.abs(Math.sin((t * Math.PI) / 0.34)) * Math.exp(-t * 2.4);
       const C = this.corner(this.flip);
       this.flip.P = { x: C.x - 46 * k, y: C.y - 30 * k };
@@ -454,7 +454,7 @@ export class HighlighterBook extends HTMLElement {
     this.hintRaf = requestAnimationFrame(tick);
   }
 
-  // ---------- 翻页 ----------
+  // ---------- Page turning ----------
 
   private holder(el: HTMLElement): HTMLElement {
     return el.querySelector('.slot') as HTMLElement;
@@ -465,7 +465,7 @@ export class HighlighterBook extends HTMLElement {
     return monthIndex(now.getFullYear(), now.getMonth());
   }
 
-  /** 左页最早、最晚能是哪个月（两页里至少有一页在可选范围内）。 */
+  /** The earliest and latest month the left page can show (at least one of the two pages must be within the selectable range). */
   private clampLeft(k: number): number {
     this.range.refresh();
     return Math.min(this.range.maxMonth, Math.max(this.range.minMonth - 1, k));
@@ -495,7 +495,7 @@ export class HighlighterBook extends HTMLElement {
     this.animateTo(true, fast ? RIFFLE_MS : FLIP_MS, fast ? easeOut : easeInOut);
   }
 
-  /** 把一页（日历元素）设成某个月；已经是这个月就不动它（保留手画的笔迹）。 */
+  /** Set a page (calendar element) to a month; if it already shows that month, leave it alone (keeping any hand-drawn strokes). */
   private setMonth(el: HighlighterCalendar, k: number): void {
     const key = keyOf(k);
     if (el.month !== key) el.month = key;
@@ -507,8 +507,8 @@ export class HighlighterBook extends HTMLElement {
   }
 
   /**
-   * 开始翻一页。往后翻：右页那张纸（这面 m+1、另一面 m+2）从页角掀起往左翻，下面露出 m+3；
-   * 往前翻：左页那张纸（这面 m、另一面 m-1）翻回右边，左边露出 m-2。
+   * Start turning a page. Forward: the right-hand sheet (this side m+1, other side m+2) lifts at the corner and turns left, revealing m+3 below;
+   * backward: the left-hand sheet (this side m, other side m-1) turns back to the right, revealing m-2 on the left.
    */
   private beginFlip(dir: 1 | -1, top = false): void {
     const W = this.$right.offsetWidth;
@@ -519,7 +519,7 @@ export class HighlighterBook extends HTMLElement {
       el.style.transform = 'none';
       el.style.clipPath = '';
     }
-    // 正面在它原来那页的位置；背面按对面那页的样子排好，翻的时候再镜像过去
+    // The front sits where its page was; the back is laid out like the opposite page and mirrored over during the turn
     const [fl, bl] = dir > 0 ? [W, 0] : [0, W];
     this.$front.style.left = `${fl}px`;
     this.$back.style.left = `${bl}px`;
@@ -537,7 +537,7 @@ export class HighlighterBook extends HTMLElement {
     } else {
       this.setMonth(a, this.m - 1);
       this.setMonth(b, this.m - 2);
-      // 往前翻：留在原处的是左页（m），折过去露出来的是它的另一面（m-1）
+      // Backward: the left page (m) stays in place, and what folds over to show is its other side (m-1)
       this.holder(this.$front).append(left);
       this.holder(this.$back).append(a);
       this.holder(this.$left).append(b);
@@ -549,7 +549,7 @@ export class HighlighterBook extends HTMLElement {
     this.render();
   }
 
-  /** 翻完（done=true）或者落回原处。 */
+  /** Finish the turn (done=true) or fall back into place. */
   private finishFlip(done: boolean): void {
     const f = this.flip;
     if (!f) return;
@@ -586,26 +586,26 @@ export class HighlighterBook extends HTMLElement {
     if (done) this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
   }
 
-  /** 页宽、页高。 */
+  /** Page width and height. */
   private get size(): { W: number; H: number } {
     return { W: this.$right.offsetWidth || 1, H: this.$right.offsetHeight || 1 };
   }
 
-  /** 被掀起的页角（镜像坐标）。 */
+  /** The lifted page corner (mirrored coordinates). */
   private corner(f: Flip): Pt {
     const { W, H } = this.size;
     return { x: W, y: f.top ? 0 : H };
   }
 
-  /** 翻过去的程度 0..1：页角从原位（x=W）走到对面（x=-W）。 */
+  /** How far the page has turned, 0..1: the corner travels from home (x=W) to the other side (x=-W). */
   private progress(f: Flip): number {
     const { W } = this.size;
     return clamp01((W - f.P.x) / (2 * W));
   }
 
   /**
-   * 页角不能被拉得离书脊太远（纸是连在书脊上的）：离同侧书脊端点不超过页宽，
-   * 离另一端不超过对角线。
+   * The corner can't be pulled too far from the spine (the paper is attached to it): no more than a page width from the spine end on the same side,
+   * and no more than the diagonal from the other end.
    */
   private constrain(f: Flip, P: Pt): Pt {
     const { W, H } = this.size;
@@ -620,13 +620,13 @@ export class HighlighterBook extends HTMLElement {
     return q;
   }
 
-  /** 页角沿一条拱起来的弧线走到对面（done=true）或者落回原处。 */
+  /** Move the corner along a bulging arc to the other side (done=true) or back into place. */
   private animateTo(done: boolean, ms: number, ease: (t: number) => number): void {
     const f = this.flip!;
     const { W, H } = this.size;
     const C = this.corner(f);
     const to = done ? { x: -W, y: C.y } : C;
-    // 走得越远拱得越高；从底角掀起往上拱，从顶角掀起往下拱
+    // The farther it travels the higher it arcs; lifted from a bottom corner it arcs up, from a top corner it arcs down
     const lift = (f.top ? 1 : -1) * LIFT * H * Math.min(1, Math.abs(to.x - f.P.x) / (2 * W));
     f.anim = { from: { ...f.P }, to, start: performance.now(), ms, ease, lift };
     if (!this.raf) this.raf = requestAnimationFrame(this.loop);
@@ -649,7 +649,7 @@ export class HighlighterBook extends HTMLElement {
       return;
     }
     this.finishFlip(a.to.x < 0);
-    // 排着队的翻页：一页接一页快速翻
+    // Queued turns: flip quickly page after page
     while (this.queue.length) {
       const dir = this.queue.shift()!;
       if (this.canFlip(dir)) {
@@ -662,8 +662,8 @@ export class HighlighterBook extends HTMLElement {
   };
 
   /**
-   * 按页角的位置把纸折好：正面沿折线裁掉折起来的部分；背面（下一张纸的另一面）
-   * 镜像到折线另一侧盖上去；再沿折线画纸面的明暗和投在下面那页上的影子。
+   * Fold the sheet according to the corner position: the front is clipped along the fold line to drop the folded part; the back (the other side of the next sheet)
+   * is mirrored to the other side of the fold line and laid on top; then paint the sheet's shading along the fold line and the shadow it casts on the page below.
    */
   private render(): void {
     const f = this.flip;
@@ -683,7 +683,7 @@ export class HighlighterBook extends HTMLElement {
       { x: 0, y: H },
     ];
     if (dl < 0.5) {
-      // 还没掀起来
+      // Not lifted yet
       this.$front.style.clipPath = '';
       this.$back.style.clipPath = polyCss([]);
       for (const st of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) st.style.visibility = 'hidden';
@@ -695,15 +695,15 @@ export class HighlighterBook extends HTMLElement {
     const keep = clipPoly(rect, (p) => -side(p));
     const fold = clipPoly(rect, side);
 
-    // 正面：只留没折起来的那部分
+    // Front: keep only the part that isn't folded
     const toFront = (q: Pt): Pt => {
       const r = mir(q);
       return { x: r.x - frontOx, y: r.y };
     };
     this.$front.style.clipPath = polyCss(keep.map(toFront));
 
-    // 背面：纸上 q 点背后印的是对面那页 M(q) 位置的内容；它被折到 R(q)。
-    // 背面元素的局部坐标 → 屏幕：l → 版面位置 → 镜像坐标 → 先 M 再 R → 回到真实坐标
+    // Back: what's printed behind point q on the sheet is the opposite page's content at M(q); it gets folded to R(q).
+    // Back element's local coordinates → screen: l → layout position → mirrored coordinates → M then R → back to real coordinates
     const reflect = (q: Pt): Pt => {
       const k = 2 * side(q);
       return { x: q.x - k * n.x, y: q.y - k * n.y };
@@ -723,7 +723,7 @@ export class HighlighterBook extends HTMLElement {
     };
     this.$back.style.clipPath = polyCss(fold.map(toBack));
 
-    // 折线上的两个点（镜像坐标）
+    // Two points on the fold line (mirrored coordinates)
     const along = { x: -n.y, y: n.x };
     const A = { x: F.x - along.x * 2000, y: F.y - along.y * 2000 };
     const B = { x: F.x + along.x * 2000, y: F.y + along.y * 2000 };
@@ -731,9 +731,9 @@ export class HighlighterBook extends HTMLElement {
     const bend = Math.sin(Math.PI * Math.min(1, p * 1.15));
     const flapW = Math.max(10, Math.min(dl / 2, W));
 
-    // 正面：靠近折线的地方因为纸拱起来而变暗
+    // Front: darker near the fold line where the paper curls up
     this.strip(this.$front, toFront(A), toFront(B), toFront(P), 26 + 30 * bend, `rgba(0,0,0,${(0.22 * bend + 0.05).toFixed(3)}), transparent`);
-    // 背面：弧面最高处一道亮光，往外慢慢变暗
+    // Back: a highlight at the top of the curl, fading darker outwards
     this.strip(
       this.$back,
       toBack(A),
@@ -742,14 +742,14 @@ export class HighlighterBook extends HTMLElement {
       flapW * 0.8,
       `rgba(255,255,255,${(0.28 * bend).toFixed(3)}), rgba(0,0,0,${(0.1 * bend).toFixed(3)}) 55%, transparent`,
     );
-    // 折过去那片纸的投影也随弧度变化，翻到底时刚好消失
+    // The shadow of the folded-over flap also follows the curl, vanishing exactly when the turn completes
     (this.$back.parentElement as HTMLElement).style.filter = `drop-shadow(0 0 ${(7 * bend).toFixed(1)}px rgba(0, 0, 0, ${(0.22 * bend).toFixed(3)}))`;
-    // 下面那页：被掀起的纸投下的影子，贴着折线往外
+    // Page below: the shadow cast by the lifted sheet, hugging the fold line and fading outwards
     const under = f.dir > 0 ? this.$right : this.$left;
     this.strip(under, toFront(A), toFront(B), toFront(C), 18 + 50 * bend, `rgba(0,0,0,${(0.3 * bend).toFixed(3)}), transparent`);
   }
 
-  /** 沿一条线（a→b，局部坐标）铺一条渐变，从线上往 inside 那一侧淡出。 */
+  /** Lay a gradient along a line (a→b, local coordinates), fading out from the line towards the inside side. */
   private strip(host: HTMLElement, a: Pt, b: Pt, inside: Pt, width: number, stops: string): void {
     const el = host.querySelector(':scope > .fx > .strip') as HTMLElement;
     const d = sub(b, a);
@@ -764,7 +764,7 @@ export class HighlighterBook extends HTMLElement {
     el.style.visibility = 'visible';
   }
 
-  /** 按当前的 m 摆好左右两页、页边和书签。 */
+  /** Lay out the left and right pages, page edges and bookmarks for the current m. */
   private layout(instant = false): void {
     if (this.flip) return;
     const left = this.holder(this.$left).firstElementChild as HighlighterCalendar;
@@ -774,7 +774,7 @@ export class HighlighterBook extends HTMLElement {
     this.$prev.disabled = !this.canFlip(-1);
     this.$next.disabled = !this.canFlip(1);
 
-    // 页边：两侧还剩多少张纸，就在书口露出几道纸边（最多 4 道，不会很厚）
+    // Page edges: show one edge line on the fore-edge for each sheet left on that side (at most 4, so it never gets thick)
     const lo = Math.max(this.range.minMonth, this.todayIndex - HORIZON);
     const hi = Math.min(this.range.maxMonth, this.todayIndex + HORIZON);
     const edges = (n: number, side: 1 | -1) => {
@@ -791,9 +791,9 @@ export class HighlighterBook extends HTMLElement {
   }
 
   /**
-   * 书签：有选中日子的月份各一枚，写着那个月选了几天（1 到 5+）。左页是 m 的时候：
-   * 正在看的两页上是夹在页里的丝带，翻过去的在左边书口，还没翻到的在右边书口，
-   * 按月份排在不同高度。换个位置或形状都是平滑过渡过去的。
+   * Bookmarks: one for each month with selected days, showing how many days are selected (1 to 5+). With m on the left page:
+   * months on the two open pages get a ribbon tucked into the page, months already turned sit on the left fore-edge, months not yet reached on the right,
+   * each at a different height per month. Changes of position or shape always transition smoothly.
    */
   private renderTabs(m = this.m, instant = false): void {
     const counts = new Map<number, number>();
@@ -823,7 +823,7 @@ export class HighlighterBook extends HTMLElement {
         el = mark;
       }
       const label = n >= 5 ? '5+' : String(n);
-      const name = `${keyOf(k)}：${n} 天`;
+      const name = `${keyOf(k)}: ${n} day${n === 1 ? '' : 's'} selected`;
       el.textContent = label;
       el.title = name;
       el.setAttribute('aria-label', name);
@@ -842,7 +842,7 @@ export class HighlighterBook extends HTMLElement {
         el.tabIndex = -1;
       } else {
         const right = k > m;
-        // 同一侧同一高度已经有书签（不同年份的同一个月）：往外再错开一点
+        // There is already a bookmark at this height on this side (the same month in a different year): stagger it a bit further out
         const spot = `${right ? 'r' : 'l'}${m0Of(k)}`;
         const extra = used.get(spot) ?? 0;
         used.set(spot, extra + 1);
@@ -859,13 +859,13 @@ export class HighlighterBook extends HTMLElement {
         el.tabIndex = 0;
       }
       if (fresh || instant) {
-        // 新出现的书签（或者整本书直接摊到别的月份）：先原地摆好，再淡入
+        // A new bookmark (or the whole book jumped to another month): place it first, then fade it in
         void el.offsetWidth;
         st.transition = '';
         requestAnimationFrame(() => el!.classList.remove('gone'));
       }
     }
-    // 这个月的选择清空了：书签淡出后再拿掉
+    // This month's selection was cleared: remove the bookmark after it fades out
     for (const [k, el] of this.marks) {
       if (counts.has(k)) continue;
       this.marks.delete(k);
@@ -874,7 +874,7 @@ export class HighlighterBook extends HTMLElement {
     }
   }
 
-  /** 翻到让月份 k 出现在左页或右页（一页接一页快速翻过去）。 */
+  /** Turn until month k is on the left or right page (flipping quickly page after page). */
   private goTo(k: number): void {
     if (this.flip) return;
     const n = k < this.m ? -Math.ceil((this.m - k) / 2) : k > this.m + 1 ? Math.ceil((k - this.m - 1) / 2) : 0;
@@ -884,7 +884,7 @@ export class HighlighterBook extends HTMLElement {
     this.request(dir, true);
   }
 
-  // ---------- 选择 ----------
+  // ---------- Selection ----------
 
   private sync(from: HighlighterCalendar): void {
     this.selection = from.value;
@@ -896,7 +896,7 @@ export class HighlighterBook extends HTMLElement {
     if (!this.flip) this.renderTabs();
   }
 
-  /** 某一页自己翻了月（键盘移出本月）：把那页改回来，改成翻一页过去，不直接跳。 */
+  /** A page changed its own month (keyboard moved out of the month): restore that page and turn one page instead of jumping. */
   private onPageMonth(c: HighlighterCalendar): void {
     if (this.flip) return;
     const k = parseKey(c.month);
@@ -904,7 +904,7 @@ export class HighlighterBook extends HTMLElement {
     const isLeft = c.parentElement === this.holder(this.$left);
     const was = isLeft ? this.m : this.m + 1;
     if (k === this.m || k === this.m + 1) {
-      // 只是从左页移到右页（或反过来）：什么都不用动，把这页改回原来的月份
+      // It only moved from the left page to the right (or vice versa): nothing to do, just restore the page's original month
       this.setMonth(c, was);
       return;
     }
@@ -912,7 +912,7 @@ export class HighlighterBook extends HTMLElement {
     this.request(k > was ? 1 : -1);
   }
 
-  // ---------- 手势：按住空白处横着拖，纸跟着手指翻 ----------
+  // ---------- Gesture: press on blank space and drag sideways, the sheet follows the finger ----------
 
   private isBlank(e: Event): boolean {
     return !e
@@ -926,7 +926,7 @@ export class HighlighterBook extends HTMLElement {
     try {
       this.$book.setPointerCapture(e.pointerId);
     } catch {
-      // 合成事件没有真实指针
+      // Synthetic events have no real pointer
     }
   }
 
@@ -947,7 +947,7 @@ export class HighlighterBook extends HTMLElement {
       const dir: 1 | -1 = dx < 0 ? 1 : -1;
       this.stopHint();
       if (this.flip) {
-        // 上一页还在翻：这一下算"再翻一页"
+        // The previous page is still turning: this counts as "turn one more page"
         g.mode = 'flick';
         this.queue.push(dir);
         return;
@@ -957,12 +957,12 @@ export class HighlighterBook extends HTMLElement {
         return;
       }
       g.mode = 'drag';
-      // 按在页面上半部分就掀上面的角，下半部分就掀下面的角
+      // Pressing on the top half of the page lifts the top corner, the bottom half lifts the bottom corner
       const r = this.$spread.getBoundingClientRect();
       this.beginFlip(dir, g.y < r.top + r.height / 2);
     }
     if (g.mode !== 'drag' || !this.flip) return;
-    // 页角跟着手指走（按手指移动的距离，不管从哪里按下去的）
+    // The corner follows the finger (by how far the finger has moved, wherever it was pressed)
     const f = this.flip;
     const C = this.corner(f);
     const mdx = f.dir > 0 ? dx : -dx;
@@ -981,7 +981,7 @@ export class HighlighterBook extends HTMLElement {
     const along = f.dir > 0 ? -vx : vx;
     const p = this.progress(f);
     const go = !cancelled && (p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
-    // 决定翻过去了，书签也跟着这一页一起挪到新位置
+    // Decided to turn: the bookmarks move to their new positions along with this page
     if (go) this.renderTabs(this.m + 2 * f.dir);
     this.animateTo(go, Math.max(180, FLIP_MS * 0.75 * (go ? 1 - p : p)), easeOut);
   }

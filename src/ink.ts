@@ -1,17 +1,17 @@
 /**
- * 画面层：把笔迹画成真实的荧光笔笔触。
+ * Rendering layer: draws strokes as realistic highlighter marks.
  *
- * 选择逻辑（8x8 小格）在 engine.ts 里，这里只负责「看起来像荧光笔」：
- * - 笔头由几十根「刷毛」组成，边缘刷毛更淡、会随机断开，形成拉丝和渐变质感；
- * - 同一处画第二遍（来回画、或者停住不动）颜色会叠加变深，但有上限；
- * - 松手后，没被选中的日期上的墨迹淡出，选中日期的墨迹保留。
+ * The selection logic (8x8 cells) lives in engine.ts; this file only makes it look like a highlighter:
+ * - The tip is made of dozens of "bristles"; edge bristles are fainter and break up randomly, giving a streaky, graded texture;
+ * - Going over the same spot again (back and forth, or holding still) darkens the colour, up to a cap;
+ * - On release, ink on unselected days fades out while ink on selected days stays.
  */
 
 import type { Tool } from './engine';
 
-/** 每一遍笔触的不透明度；叠加 n 遍 ≈ 1 - (1 - PASS_ALPHA)^n。 */
+/** Opacity of a single pass; n overlapping passes ≈ 1 - (1 - PASS_ALPHA)^n. */
 export const PASS_ALPHA = 0.5;
-/** 叠加变深的上限。 */
+/** Upper limit for darkening from overlapping passes. */
 export const MAX_DEPTH = 0.9;
 
 export interface Run {
@@ -24,9 +24,9 @@ export interface Run {
 interface InkPoint {
   x: number;
   y: number;
-  /** 从起点算起的弧长 */
+  /** Arc length from the start point */
   s: number;
-  /** 速度 px/ms */
+  /** Speed in px/ms */
   v: number;
   t: number;
 }
@@ -66,7 +66,7 @@ function noise(x: number, seed: number): number {
 
 let seedCounter = 1;
 
-/** 一遍笔触：一串点 + 一把刷毛。 */
+/** A single pass: a series of points plus a set of bristles. */
 export class BrushStroke {
   readonly pts: InkPoint[] = [];
   ended = false;
@@ -115,7 +115,7 @@ export class BrushStroke {
     this.pts.push({ x, y, s: last.s + ds, v: last.v * 0.6 + v * 0.4, t });
   }
 
-  /** 画到 ctx 上（颜色由调用方设好 strokeStyle）。upto 用于动画：只画到某个弧长。 */
+  /** Draw onto ctx (the caller sets strokeStyle). `upto` is for animation: draw only up to that arc length. */
   draw(ctx: CanvasRenderingContext2D, upto = Infinity): void {
     const pts = this.pts;
     if (!pts.length) return;
@@ -130,7 +130,7 @@ export class BrushStroke {
       ctx.lineWidth = b.w;
       ctx.beginPath();
       if (L < 1) {
-        // 刚落笔：一个笔头形状的印子
+        // Pen just touched down: a tip-shaped imprint
         if (b.edge > 0.8 && hash(b.seed) > 0.5) continue;
         ctx.moveTo(pts[0].x + ox - 0.6, pts[0].y + oy);
         ctx.lineTo(pts[0].x + ox + 0.6, pts[0].y + oy);
@@ -156,7 +156,7 @@ export class BrushStroke {
     ctx.globalAlpha = 1;
   }
 
-  /** 边缘刷毛按噪声断开 → 拉丝；划得越快越干、断得越多。 */
+  /** Edge bristles break up by noise → streaks; the faster the stroke, the drier it gets and the more it breaks. */
   private visible(b: Bristle, p: InkPoint): boolean {
     if (b.edge < 0.5) return true;
     const th = ((b.edge - 0.5) / 0.5) * 0.72 + Math.min(0.22, p.v * 0.1);
@@ -170,10 +170,10 @@ interface Anim {
   duration: number;
 }
 
-/** 松笔后一段墨迹从原来的高度挪进窄带的动画（设备像素）。 */
+/** Animation that moves a stretch of ink from its original height into the narrow band after release (device pixels). */
 interface Settle {
   slice: HTMLCanvasElement;
-  /** 落定时在这条带子底下垫一笔（css 像素），把挪进来的笔画之间的空隙补齐。 */
+  /** When it lands, lay a stroke under this band (CSS pixels) to fill the gaps between the moved strokes. */
   run: { left: number; right: number; cy: number; half: number };
   x: number;
   from: [number, number];
@@ -201,24 +201,24 @@ function ctx2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
 
 export class InkCanvas {
   color = '#ffd21f';
-  /** 深色背景上半透明的黄会发灰，打开后把墨色叠两次，显得更亮。 */
+  /** Translucent yellow looks greyish on dark backgrounds; when on, the ink is composited twice to look brighter. */
   boost = false;
 
   private dpr = 1;
   private pw = 1;
   private ph = 1;
-  /** 已经落定的墨（单色，透明度累积）。 */
+  /** Ink that has already been committed (single colour, accumulated alpha). */
   private ink: HTMLCanvasElement;
   private scratch: HTMLCanvasElement;
   private comp: HTMLCanvasElement;
   private erase: HTMLCanvasElement;
   private mask: HTMLCanvasElement;
-  /** 笔停住时洇出的墨，松手时才并入 ink（单击则丢弃）。 */
+  /** Ink pooled while the pen is held still; merged into `ink` on release (discarded on a tap). */
   private poolLayer: HTMLCanvasElement;
   private maskKey = '';
   private runs: Run[] = [];
   private pad = 4;
-  /** 不能选的日期格：墨水不会留在上面（像涂在蜡纸上）。 */
+  /** Unselectable day cells: ink does not stick to them (like writing on wax paper). */
   private blocked: Run[] = [];
 
   private live: BrushStroke | null = null;
@@ -247,7 +247,7 @@ export class InkCanvas {
     return this.live !== null || this.anims.length > 0 || this.ghosts.length > 0 || this.settles.length > 0;
   }
 
-  /** 改尺寸会清空墨迹，调用方随后要重新补画选中日期。 */
+  /** Resizing clears the ink; the caller must then redraw the selected days. */
   resize(cssW: number, cssH: number, dpr: number): void {
     this.dpr = dpr;
     this.pw = Math.max(1, Math.round(cssW * dpr));
@@ -280,7 +280,7 @@ export class InkCanvas {
     c.restore();
   }
 
-  /** 选中区域：同一行里连续选中的日期连成一段，墨迹只在这些区域里保留。 */
+  /** Selected regions: consecutive selected days in a row form one run; ink is kept only inside these regions. */
   setRuns(runs: Run[], pad: number): void {
     this.runs = runs;
     this.pad = pad;
@@ -321,7 +321,7 @@ export class InkCanvas {
     this.pooled = 0;
     this.poolDrawn = 0;
 
-    // 来回画：方向掉头时把这一遍落定，新开一遍 → 重叠处颜色叠加变深
+    // Back-and-forth: when direction reverses, commit this pass and start a new one → overlaps get darker
     const a = this.dirAnchor!;
     const dist = Math.hypot(x - a.x, y - a.y);
     if (dist < 8) return;
@@ -338,11 +338,11 @@ export class InkCanvas {
     this.dirAnchor = { x, y };
   }
 
-  /** 笔停住不动：墨水在笔尖下慢慢洇开、变深（有上限）。dt 毫秒。 */
+  /** Pen held still: ink slowly bleeds out and darkens under the tip (capped). `dt` in ms. */
   pool(x: number, y: number, dt: number): void {
     if (this.liveTool !== 'highlight') return;
     this.pooled += dt;
-    // 攒够一点再画，避免每帧极小的透明度累加出条纹
+    // Accumulate a bit before drawing, so tiny per-frame alpha steps don't build up into banding
     if (this.pooled - this.poolDrawn < 60) return;
     const step = this.pooled - this.poolDrawn;
     this.poolDrawn = this.pooled;
@@ -354,7 +354,7 @@ export class InkCanvas {
     c.translate(x, y);
     c.rotate(0.14);
     c.scale(0.55, 1);
-    // 同心实色椭圆叠出柔和的墨团；不用渐变，避免抖动纹理被反复叠加放大
+    // Stack concentric solid ellipses into a soft blot; no gradient, so dithering noise isn't amplified by repeated overlays
     const r = half * grow;
     c.fillStyle = this.color;
     const a = Math.min(0.2, step * 0.0012);
@@ -367,7 +367,7 @@ export class InkCanvas {
     c.restore();
   }
 
-  /** 松手。commit=false 用于单击：不留落笔的印子，直接由补笔动画接手。 */
+  /** Release. commit=false is for taps: leave no touch-down mark and let the fill-in animation take over. */
   endLive(commit = true): void {
     if (this.live && commit) {
       this.live.ended = true;
@@ -385,8 +385,8 @@ export class InkCanvas {
   }
 
   /**
-   * 自动补一笔：从 (x0,y0) 划到 (x1,y1)，带一点自然的弧度。
-   * animate=true 时像有人拿笔划过去。
+   * Draw an automatic stroke from (x0,y0) to (x1,y1) with a slight natural curve.
+   * With animate=true it looks like someone sweeping a pen across.
    */
   sweep(x0: number, y0: number, x1: number, y1: number, half: number, animate: boolean, delay = 0): void {
     const s = new BrushStroke(half);
@@ -395,7 +395,7 @@ export class InkCanvas {
     const n = Math.max(2, Math.ceil(len / 2));
     for (let i = 0; i <= n; i++) {
       const u = i / n;
-      // 起笔慢、中间快、收笔慢 → 边缘拉丝的疏密也会跟着变
+      // Slow start, fast middle, slow finish → the density of the edge streaks varies accordingly
       s.add(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u + Math.sin(Math.PI * u) * bow, i * (1 + 3 * Math.abs(u - 0.5)));
     }
     s.ended = true;
@@ -403,7 +403,7 @@ export class InkCanvas {
     else this.commit(s);
   }
 
-  /** 把选中区域以外的墨迹剪掉，并让它们淡出。 */
+  /** Clip away ink outside the selected regions and fade it out. */
   prune(): void {
     this.buildMask();
     const ghost = layer(this.pw, this.ph);
@@ -423,8 +423,9 @@ export class InkCanvas {
   }
 
   /**
-   * 松笔：每一段选中区域里的墨迹，按它实际涂到的上下范围，整体挪进这一行的窄带
-   * （cy 为中心、上下各 half），笔触的拉丝和深浅都保留，只是位置和高度变整齐。
+   * On release: take the ink in each selected run, using the vertical extent it actually
+   * covered, and move it as a whole into the row's narrow band (centred on cy, `half` above
+   * and below). Streaks and shading are preserved; only position and height get tidied up.
    */
   settle(rows: (Run & { cy: number; half: number })[]): void {
     this.flushSettles();
@@ -457,7 +458,7 @@ export class InkCanvas {
       const from: [number, number] = [y0 + top, y0 + bottom + 1];
       const to: [number, number] = [(r.cy - r.half) * d, (r.cy + r.half) * d];
       if (Math.abs(from[0] - to[0]) < 1.5 * d && Math.abs(from[1] - to[1]) < 1.5 * d) {
-        // 已经在带子里了：只垫一笔补齐空隙
+        // Already inside the band: just lay an underlay stroke to fill the gaps
         this.underlay(r);
         continue;
       }
@@ -468,13 +469,13 @@ export class InkCanvas {
     }
   }
 
-  /** 还没播完的落带动画直接落定（新的一笔开始前）。 */
+  /** Immediately land any settle animations still in progress (before a new stroke starts). */
   private flushSettles(): void {
     for (const s of this.settles) this.land(s);
     this.settles = [];
   }
 
-  /** 落定：挪好的笔画留在上面，底下垫一笔均匀的，整条带子看起来是一气呵成的。 */
+  /** Land: the moved strokes stay on top with an even stroke underneath, so the whole band looks like one continuous mark. */
   private land(st: Settle): void {
     const c = ctx2d(this.ink);
     c.drawImage(st.slice, st.x, st.to[0], st.slice.width, st.to[1] - st.to[0]);
@@ -490,9 +491,9 @@ export class InkCanvas {
     this.commit(s, true);
   }
 
-  /** 画一帧，返回是否还需要继续动画。 */
+  /** Draw one frame; returns whether the animation needs to continue. */
   frame(dt: number): boolean {
-    // 挪到位的先落进墨迹层（这一帧就能画出垫在底下的那一笔）
+    // Land finished settles into the ink layer first (so this frame already shows the underlay stroke)
     for (const st of this.settles) st.elapsed += dt;
     for (const st of this.settles.filter((x) => x.elapsed >= SETTLE_MS)) this.land(st);
     this.settles = this.settles.filter((x) => x.elapsed < SETTLE_MS);
@@ -510,7 +511,7 @@ export class InkCanvas {
     comp.clearRect(0, 0, this.pw, this.ph);
     comp.drawImage(this.ink, 0, 0);
     if (this.liveTool === 'highlight') comp.drawImage(this.poolLayer, 0, 0);
-    // 松笔后的笔画正在挪进窄带：先快后慢，最后一点点落稳
+    // Strokes moving into the narrow band after release: fast at first, then easing gently into place
     for (const st of this.settles) {
       const e = 1 - (1 - Math.min(1, st.elapsed / SETTLE_MS)) ** 3;
       const top = st.from[0] + (st.to[0] - st.from[0]) * e;
@@ -537,7 +538,7 @@ export class InkCanvas {
       comp.globalAlpha = 1;
     }
 
-    // 正在涂的时候所见即所得；其余时候只显示选中区域
+    // While highlighting, show exactly what is drawn; otherwise show only the selected regions
     if (this.liveTool !== 'highlight') {
       this.buildMask();
       comp.globalCompositeOperation = 'destination-in';
@@ -572,7 +573,7 @@ export class InkCanvas {
     return this.busy;
   }
 
-  /** 把一笔落进墨迹层。under=true 时垫在已有墨迹的下面。 */
+  /** Commit a stroke into the ink layer. With under=true it goes beneath the existing ink. */
   private commit(stroke: BrushStroke, under = false): void {
     this.clearLayer(this.scratch);
     const s = ctx2d(this.scratch);
@@ -617,7 +618,7 @@ export class InkCanvas {
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const p = this.pad;
     for (const r of this.runs) {
-      // 左右两端做羽化，墨迹在日期边缘自然收住，而不是被一刀切齐
+      // Feather the left and right ends so ink fades out naturally at the day edges instead of being cut off sharply
       const x0 = r.left - p;
       const x1 = r.right + p;
       const g = c.createLinearGradient(x0, 0, x1, 0);

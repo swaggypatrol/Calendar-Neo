@@ -3,7 +3,7 @@ import { InkCanvas, type Run } from './ink';
 import { DayRange } from './range';
 
 export interface CalendarChangeDetail {
-  /** 全部选中的日期，YYYY-MM-DD，升序。 */
+  /** All selected dates, YYYY-MM-DD, ascending. */
   value: string[];
   added: string[];
   removed: string[];
@@ -87,7 +87,7 @@ header {
 .nav:hover { background: var(--hc-line); }
 .nav:disabled { opacity: 0.2; cursor: default; background: transparent; }
 .hc.hide-nav .nav { visibility: hidden; }
-/* 已经过去的月份：一圈暗角 */
+/* Months already past: a dark vignette around the edges */
 .hc.vignette { box-shadow: inset 0 0 44px 10px rgba(80, 60, 40, 0.16); }
 @media (prefers-color-scheme: dark) {
   .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
@@ -195,13 +195,13 @@ const TEMPLATE = `
 `;
 
 /**
- * <highlighter-calendar>：像荧光笔一样划选日期的日历。
+ * <highlighter-calendar>: a calendar where you select dates by swiping over them like a highlighter.
  *
- * 属性：month="2026-09"  threshold="35"  week-start="1|0"  locale="zh-CN"
- *       color="#ffd21f"  tool="highlight|erase"  brush-size="1"  hold-delay="320"
- *       value="2026-09-03,2026-09-04"
- *       min="today"  max="+90"（可选范围：today / tomorrow / +N 天 / YYYY-MM-DD）
- * 事件：input（划的过程中每选中/取消一天触发）、change（松手后，若有变化）、monthchange
+ * Attributes: month="2026-09"  threshold="35"  week-start="1|0"  locale="zh-CN"
+ *             color="#ffd21f"  tool="highlight|erase"  brush-size="1"  hold-delay="320"
+ *             value="2026-09-03,2026-09-04"
+ *             min="today"  max="+90" (selectable range: today / tomorrow / +N days / YYYY-MM-DD)
+ * Events: input (fires as each day is selected/deselected while drawing), change (on release, if anything changed), monthchange
  */
 export class HighlighterCalendar extends HTMLElement {
   static observedAttributes = [
@@ -221,7 +221,7 @@ export class HighlighterCalendar extends HTMLElement {
   ];
 
   readonly engine = new HighlighterEngine();
-  /** 可选范围；范围外的日期灰掉，笔刷划过去不起作用。 */
+  /** Selectable range; dates outside it are greyed out and the brush has no effect on them. */
   readonly range = new DayRange();
 
   private ink: InkCanvas;
@@ -299,7 +299,7 @@ export class HighlighterCalendar extends HTMLElement {
   }
 
   connectedCallback(): void {
-    // 已经画过的日历被挪到别的容器里（比如翻页时换到纸张背面）：不重画，保留手画的笔迹
+    // An already-drawn calendar moved into another container (e.g. onto the back of a page mid-turn): don't re-render, keep the hand-drawn ink
     if (this.cells.length) this.measure();
     else this.render();
     this.ro = new ResizeObserver(() => this.measure());
@@ -359,9 +359,9 @@ export class HighlighterCalendar extends HTMLElement {
     }
   }
 
-  // ---------- 公开 API ----------
+  // ---------- Public API ----------
 
-  /** 选中的日期（YYYY-MM-DD，升序）。可以不连续，跨月也行。 */
+  /** Selected dates (YYYY-MM-DD, ascending). Need not be contiguous, and may span months. */
   get value(): string[] {
     return this.engine.value;
   }
@@ -371,13 +371,13 @@ export class HighlighterCalendar extends HTMLElement {
     const shown = () => visible.filter((k) => this.engine.isSelected(k)).join();
     const before = shown();
     this.engine.setSelection(keys);
-    // 本月可见的日期没变（比如别的月份的卡片改了选择）：不重画，保留手绘笔迹
+    // Visible dates in this month are unchanged (e.g. another month's card changed the selection): don't redraw, keep the hand-drawn ink
     if (shown() === before) return;
     this.syncDom();
     this.measure(true);
   }
 
-  /** 多少个小格（共 64 个）被涂上才算选中，默认 35。 */
+  /** How many sub-cells (out of 64) must be painted for a day to count as selected; default 35. */
   get threshold(): number {
     return this.engine.threshold;
   }
@@ -386,7 +386,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.engine.threshold = Number.isFinite(n) ? n : DEFAULT_THRESHOLD;
   }
 
-  /** 当前显示的月份，格式 YYYY-MM。 */
+  /** Month currently shown, as YYYY-MM. */
   get month(): string {
     return `${this.year}-${pad2(this.month0 + 1)}`;
   }
@@ -400,7 +400,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.render();
   }
 
-  /** 最早可选的日期（YYYY-MM-DD），没有限制时为 null。 */
+  /** Earliest selectable date (YYYY-MM-DD), or null if unbounded. */
   get min(): string | null {
     return this.range.min;
   }
@@ -410,7 +410,7 @@ export class HighlighterCalendar extends HTMLElement {
     else this.setAttribute('min', v);
   }
 
-  /** 最晚可选的日期（YYYY-MM-DD），没有限制时为 null。 */
+  /** Latest selectable date (YYYY-MM-DD), or null if unbounded. */
   get max(): string | null {
     return this.range.max;
   }
@@ -420,7 +420,7 @@ export class HighlighterCalendar extends HTMLElement {
     else this.setAttribute('max', v);
   }
 
-  /** 左键 / 触摸用的工具。右键和笔的橡皮头永远是橡皮擦。 */
+  /** Tool for left click / touch. Right click and a pen's eraser end always erase. */
   get tool(): Tool {
     return this._tool;
   }
@@ -441,7 +441,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.kick();
   }
 
-  /** 清空所有选择（带淡出动画）。silent=true 时不触发 change。 */
+  /** Clear the whole selection (with a fade-out). silent=true suppresses the change event. */
   clear(silent = false): void {
     const before = this.value;
     if (!before.length) return;
@@ -463,12 +463,12 @@ export class HighlighterCalendar extends HTMLElement {
     this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
   }
 
-  /** 翻月不能翻到整月都不可选的月份。 */
+  /** Month navigation can't land on a month with no selectable days at all. */
   private clampMonth(k: number): number {
     return Math.min(this.range.maxMonth, Math.max(this.range.minMonth, k));
   }
 
-  /** min / max 变了：去掉范围外的已选日期，必要时翻到可选的月份。 */
+  /** min / max changed: drop selected dates outside the range and move to a selectable month if needed. */
   private applyRange(): void {
     const before = this.value;
     this.engine.setSelection(before);
@@ -480,10 +480,10 @@ export class HighlighterCalendar extends HTMLElement {
     if (this.isConnected) this.emit('change', before);
   }
 
-  // ---------- 渲染 ----------
+  // ---------- Rendering ----------
 
   private render(): void {
-    // today 这类相对写法每次重画时重新换算，页面开过夜也不会错
+    // Relative values like "today" are re-resolved on every render, so a page left open overnight stays correct
     this.range.refresh();
     const { year: y, month0: m } = this;
     const k = y * 12 + m;
@@ -497,7 +497,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.$weekdays.innerHTML = '';
     for (let i = 0; i < 7; i++) {
       const s = document.createElement('span');
-      // 2023-01-01 是星期日
+      // 2023-01-01 was a Sunday
       s.textContent = wd.format(new Date(2023, 0, 1 + ((this.weekStart + i) % 7)));
       this.$weekdays.append(s);
     }
@@ -569,12 +569,12 @@ export class HighlighterCalendar extends HTMLElement {
     this.dayEls.get(key)?.setAttribute('tabindex', '0');
   }
 
-  /** 量一下各日期格的位置交给引擎；尺寸变了（或 force）就重画墨迹。 */
+  /** Measure each day cell's position and hand it to the engine; redraw the ink if the size changed (or force). */
   private measure(force = false): void {
     if (!this.isConnected || this.ptr) return;
     const box = this.$wrap.getBoundingClientRect();
     if (box.width === 0) return;
-    // 正在被 3D 翻转（翻页中的纸）：量出来的是投影，不能用，等摆平了再量
+    // Mid 3D flip (a page being turned): the measurement is a projection and unusable; wait until it lies flat
     const c0 = this.cells[0].getBoundingClientRect();
     const c1 = this.cells[1].getBoundingClientRect();
     if (c1.left < c0.left || Math.abs(box.width - this.$wrap.offsetWidth) > 1) return;
@@ -620,7 +620,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.kick();
   }
 
-  /** 选中区域：同一行里连续选中的日期连成一段。 */
+  /** Selected regions: consecutive selected days in the same row joined into one run. */
   private runs(): (Run & { days: DayRect[] })[] {
     const out: (Run & { days: DayRect[] })[] = [];
     for (const row of this.engine.layout) {
@@ -649,14 +649,14 @@ export class HighlighterCalendar extends HTMLElement {
   }
 
   /**
-   * 笔迹最后落定的窄带：以日期数字为上下中心、高度是格子的 0.618。
-   * 画的时候可以涂在格子里任何地方，松手后笔画会自然地挪进这条带子，看起来整齐统一。
+   * The narrow band where ink finally settles: vertically centred on the day number, 0.618 of the cell height.
+   * You can paint anywhere in the cell while drawing; on release the stroke drifts into this band so everything looks neat and uniform.
    */
   private band(r: { top: number; bottom: number }): { cy: number; half: number } {
     return { cy: (r.top + r.bottom) / 2, half: (r.bottom - r.top) * 0.309 };
   }
 
-  /** 不带动画地给所有选中日期补上笔迹（翻月、改尺寸、程序设值时）。 */
+  /** Paint ink for all selected days without animation (on month change, resize, or programmatic value). */
   private paintStatic(): void {
     for (const run of this.runs()) {
       const { cy, half } = this.band(run);
@@ -665,7 +665,7 @@ export class HighlighterCalendar extends HTMLElement {
     }
   }
 
-  /** 自动划一笔穿过某天（落在窄带里）。dir=1 从左往右，-1 从右往左。 */
+  /** Automatically sweep one stroke across a day (within the band). dir=1 left to right, -1 right to left. */
   private sweepDay(r: DayRect, _y: number, dir: 1 | -1, delay = 0): void {
     const { cy: yc, half: ry } = this.band(r);
     const h = r.bottom - r.top;
@@ -692,7 +692,7 @@ export class HighlighterCalendar extends HTMLElement {
       } else if (this.flipCtx === 'stroke') {
         this.pendingComplete.add(e.key);
       } else if (this.flipCtx === 'hold') {
-        // 停笔太久：从笔停的地方，顺着最自然的方向划一笔
+        // Pen held still too long: from where it stopped, sweep one stroke in the most natural direction
         const hp = this.engine.holdPoint;
         const dir = hp && hp.x > r.right ? -1 : 1;
         this.sweepDay(r, hp?.y ?? (r.top + r.bottom) / 2, dir);
@@ -712,7 +712,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.kick();
   }
 
-  /** 松手后：划得不够完整的已选日期，顺着原来的方向把笔补完。 */
+  /** After release: for selected days that weren't fully covered, finish the stroke in its original direction. */
   private completeStrokes(): void {
     for (const key of this.pendingComplete) {
       const st = this.engine.state(key);
@@ -748,7 +748,7 @@ export class HighlighterCalendar extends HTMLElement {
     );
   }
 
-  // ---------- 指针 ----------
+  // ---------- Pointer ----------
 
   private local(e: PointerEvent): { x: number; y: number } {
     const b = this.$wrap.getBoundingClientRect();
@@ -768,7 +768,7 @@ export class HighlighterCalendar extends HTMLElement {
     try {
       this.$wrap.setPointerCapture(e.pointerId);
     } catch {
-      // 合成事件等没有真实指针时拿不到捕获，不影响涂画
+      // No capture for synthetic events without a real pointer; painting still works
     }
     this.ptr = {
       id: e.pointerId,
@@ -820,7 +820,7 @@ export class HighlighterCalendar extends HTMLElement {
     const { x, y } = this.local(e);
     const tap = !cancelled && !p.moved && !p.holdStarted && e.timeStamp - p.downAt < this.holdDelay;
     if (tap) {
-      // 单击：像点了一滴墨，这一天被一笔划过选中（右键则擦掉）
+      // Tap: like a drop of ink, the day is selected with a single sweep (right click erases it)
       this.flipCtx = 'tap';
       this.tapY = y;
       this.engine.tap(x, y);
@@ -831,8 +831,8 @@ export class HighlighterCalendar extends HTMLElement {
     this.completeStrokes();
     if (p.tool === 'highlight') {
       this.ink.prune();
-      // 松笔：笔画挪进各自那一行的窄带
-      // 只动这一笔碰到的那几段，别的已经落好的不再加深
+      // Pen lifted: strokes drift into their row's narrow band
+      // Only the runs this stroke touched move; runs that already settled aren't darkened again
       const touched = this.engine.coverage;
       this.ink.settle(
         this.runs()
@@ -867,7 +867,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.$wrap.classList.add('brush-cursor');
   }
 
-  // ---------- 键盘 ----------
+  // ---------- Keyboard ----------
 
   private onKey(e: KeyboardEvent): void {
     const key = this.focusKey;
@@ -917,7 +917,7 @@ export class HighlighterCalendar extends HTMLElement {
     e.preventDefault();
   }
 
-  // ---------- 动画循环 ----------
+  // ---------- Animation loop ----------
 
   private kick(): void {
     if (!this.raf && this.isConnected) this.raf = requestAnimationFrame(this.loop);
@@ -930,7 +930,7 @@ export class HighlighterCalendar extends HTMLElement {
     const p = this.ptr;
     if (p) {
       const still = t - p.stillSince;
-      // 停着不动：墨水在笔尖下慢慢洇开变深
+      // Held still: ink slowly bleeds and darkens under the pen tip
       if (still > 140) this.ink.pool(p.stillX, p.stillY, dt);
       if (!p.holdStarted && still >= this.holdDelay) {
         this.engine.startHold(p.stillX, p.stillY);

@@ -1,12 +1,12 @@
 /**
- * 可选日期范围（min / max）。预约场景用 min="today"：今天以前的日子不能选。
+ * Selectable date range (min / max). For bookings use min="today": days before today can't be selected.
  *
- * 写法：today、tomorrow、+N（N 天以后）、YYYY-MM-DD。按调用时的本地日期计算。
+ * Syntax: today, tomorrow, +N (N days from now), YYYY-MM-DD. Evaluated against the local date at call time.
  */
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** 把 min / max 的写法换算成 YYYY-MM-DD；写错了返回 null（等于不限制）。 */
+/** Convert a min / max spec to YYYY-MM-DD; returns null for an invalid spec (meaning no limit). */
 export function resolveDay(spec: string | null | undefined, now = new Date()): string | null {
   const s = spec?.trim().toLowerCase();
   if (!s) return null;
@@ -22,7 +22,7 @@ export function resolveDay(spec: string | null | undefined, now = new Date()): s
   return m ? `${m[1]}-${pad2(Number(m[2]))}-${pad2(Number(m[3]))}` : null;
 }
 
-/** YYYY-MM-DD 对应的月份序号（年 * 12 + 月），和 deck 里的一致。 */
+/** Month index (year * 12 + month) for a YYYY-MM-DD, matching the one used in the deck. */
 export function monthIndexOf(day: string): number {
   return Number(day.slice(0, 4)) * 12 + Number(day.slice(5, 7)) - 1;
 }
@@ -33,7 +33,7 @@ export class DayRange {
   private specMin: string | null = null;
   private specMax: string | null = null;
 
-  /** 记下写法并立即换算。today 这类相对写法可以用 refresh() 重新换算（比如过了午夜）。 */
+  /** Store the spec and resolve it right away. Relative specs such as today can be re-resolved with refresh() (e.g. after midnight). */
   set(which: 'min' | 'max', spec: string | null): void {
     if (which === 'min') this.specMin = spec;
     else this.specMax = spec;
@@ -45,7 +45,7 @@ export class DayRange {
     this.max = resolveDay(this.specMax, now);
   }
 
-  /** YYYY-MM-DD 可以字符串比较。 */
+  /** YYYY-MM-DD strings compare correctly as strings. */
   allows(key: string): boolean {
     return !(this.min && key < this.min) && !(this.max && key > this.max);
   }

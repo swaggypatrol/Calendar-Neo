@@ -2,40 +2,40 @@ import type { HighlighterCalendar } from './calendar';
 import type { Tool } from './engine';
 import { DayRange } from './range';
 
-/** 卡堆里每张卡露出来的偏移。 */
+/** Offset at which each card in a pile peeks out. */
 const STACK_DX = 1.2;
 const STACK_DY = 3.2;
-/** 程序调用 next() / prev() 时动一张的动画时长，先加速再减速。 */
+/** Duration of one programmatic next() / prev() step; eases in, then out. */
 const STEP_MS = 720;
-/** 松手后卡片自己走完剩下那段路的最长 / 最短时间。 */
+/** Longest / shortest time a released card takes to travel the rest of the way on its own. */
 const RELEASE_MS = 480;
 const RELEASE_MIN_MS = 160;
-/** 卡堆按月分层能显示多远（离今天的月数），更远的月份压成最底下一层。 */
+/** How far (in months from today) the piles are drawn month by month; months further out are squashed into one bottom layer. */
 const HORIZON = 24;
-/** 同时最多要露面的卡：左边卡堆最上面一张、两张摆开的、右边卡堆最上面一张。 */
+/** Most cards ever visible at once: top of the left pile, the two laid out, top of the right pile. */
 const POOL_SIZE = 5;
 const EPS = 1e-6;
 
-/** 手指横向移动多少像素开始算拖动。 */
+/** Horizontal movement in pixels before a press counts as a drag. */
 const DRAG_PX = 6;
-/** 卡片还在动时再划：横向移动多少像素算一次划动（用来加速转盘）。 */
+/** Swiping while cards are still moving: horizontal pixels that count as one swipe (used to speed up the spinner). */
 const SWIPE_PX = 36;
-/** 松手时拖过了这段路的多少就翻过去，否则弹回来。 */
+/** On release, flip if dragged past this fraction of the way; otherwise spring back. */
 const COMMIT = 0.3;
-/** 松手时手指速度超过它（像素 / 毫秒）也算翻过去，轻轻一甩就行。 */
+/** A release faster than this (px / ms) also flips: a light flick is enough. */
 const FLICK_SPEED = 0.35;
-/** 上一下刚停稳多久之内又朝同一方向划，也算"连续划"。 */
+/** Swiping the same way again within this long after the last step settled also counts as a "rapid swipe". */
 const GRACE_MS = 250;
-/** 翻到可选范围的尽头：程序调用时整排挪一下再弹回；手指拖动时带阻尼跟手，松手弹回。 */
+/** At the end of the selectable range: programmatic calls nudge the whole row and bounce back; drags follow the finger with resistance and spring back on release. */
 const BUMP_PX = 22;
 const BUMP_MS = 380;
 const RUBBER = 0.35;
 const RUBBER_MAX = 70;
 
 /**
- * 转盘模式的物理参数（单位：月、秒）。每划一下给转盘加 impulse 的速度；
- * 阻尼让速度按 e^(-damping·t) 衰减，慢到 snapSpeed 以下，
- * 就用一个临界阻尼的弹簧把它吸到最近的月份上停住。
+ * Spinner physics (units: months, seconds). Each swipe adds `impulse` to the velocity;
+ * damping decays the velocity as e^(-damping·t), and once it drops below snapSpeed
+ * a critically damped spring pulls it onto the nearest month and stops it there.
  */
 const SPIN = {
   impulse: 5,
@@ -43,15 +43,15 @@ const SPIN = {
   damping: 4.5,
   snapSpeed: 1.8,
   spring: 16,
-  /** 转起来时右边那张展开的速度。 */
+  /** How fast the right-hand card spreads out once spinning. */
   open: 12,
 };
 
-/** 先加速再减速。 */
+/** Ease in, then out. */
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
-/** 只减速：松手时卡片已经跟着手指在动了，接着滑过去慢慢停下。 */
+/** Ease out only: on release the card is already moving with the finger, so it glides on and slows to a stop. */
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
-/** 缓动曲线的斜率：动画播到一半切进转盘模式时接过当时的速度，不会顿一下。 */
+/** Slope of an easing curve: when switching to spin mode mid-animation, pick up the current velocity so there's no hitch. */
 const slope = (e: (t: number) => number, t: number) => {
   const h = 1e-3;
   return (e(Math.min(1, t + h)) - e(Math.max(0, t - h))) / (Math.min(1, t + h) - Math.max(0, t - h));
@@ -60,15 +60,15 @@ const lerp = (x: number, y: number, t: number) => x + (y - x) * t;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /**
- * 卡片流的状态。f 是桌面上最左边那张的月份（月份序号 = 年 * 12 + 月），
- * 转动时是连续变化的小数；b 是右边那张摆开的程度，0 只有一张，1 两张并排。
+ * State of the card stream. f is the month of the leftmost card on the table (month index = year * 12 + month),
+ * a continuous fraction while spinning; b is how far the right-hand card is spread out: 0 = one card, 1 = two side by side.
  */
 interface View {
   f: number;
   b: number;
 }
 
-/** 从 from 动到 to。dir 是朝哪边翻（收起为 0）。 */
+/** Animate from `from` to `to`. dir is the flip direction (0 when collapsing). */
 interface Tween {
   from: View;
   to: View;
@@ -79,9 +79,9 @@ interface Tween {
 }
 
 /**
- * 转盘：v 是速度（月 / 秒），snap 是正在吸附的目标月份。
- * origin / count 记着这一串同方向的划动从哪个月开始、划了几下，
- * 停下时至少转过这么多个月——每划一下至少动一张。
+ * Spinner: v is the velocity (months / second), snap is the month it is snapping to.
+ * origin / count record where this run of same-direction swipes started and how many there were;
+ * it turns at least that many months before stopping, so every swipe moves at least one card.
  */
 interface Spin {
   v: number;
@@ -91,13 +91,13 @@ interface Spin {
   count: number;
 }
 
-/** 手指按在空白处。drag 是跟手拖动的状态：起点状态、要去的状态、这段路有多长。 */
+/** A finger pressed on blank space. Drag state: starting view, target view, and how long the path is. */
 interface Gesture {
   id: number;
   x: number;
   y: number;
   t: number;
-  /** 'idle' 还没动；'drag' 卡片跟着手指走；'flick' 卡片正在动，这一下只用来加速；'scroll' 竖着划，不管。 */
+  /** 'idle' not moved yet; 'drag' cards follow the finger; 'flick' cards are already moving, this swipe only adds speed; 'scroll' vertical swipe, ignored. */
   mode: 'idle' | 'drag' | 'flick' | 'scroll';
   base: View;
   dir: 1 | -1 | 0;
@@ -116,7 +116,7 @@ const parseKey = (s: string): number | null => {
   return m ? monthIndex(Number(m[1]), Math.min(11, Math.max(0, Number(m[2]) - 1))) : null;
 };
 
-/** 卡堆里的一层（一个月）：glow 表示这个月里有选中的日子，gap 是它和上一层之间的缝。 */
+/** One layer (one month) of a pile: glow means the month has selected days; gap is the space between it and the layer above. */
 interface Layer {
   glow: boolean;
   gap: number;
@@ -125,13 +125,13 @@ interface Layer {
 const GLOW = 'color-mix(in srgb, var(--hc-ink, #ffd21f) 85%, transparent)';
 
 /**
- * 画在卡片自己的阴影里的卡堆：下面按月一层层叠着，越往下越薄，跨年处多一道缝。
- * 有选中日子的那层边缘用荧光笔的颜色，并从缝里透出一圈光。side=1 往右下叠，-1 往左下叠。
- * selfGlow：这张卡自己压在别的卡下面、露出一条边时，也按它自己的月份发光。
+ * A card pile drawn in the card's own box-shadow: months stacked layer by layer, thinner further down, with an extra gap at year boundaries.
+ * Layers with selected days get a highlighter-coloured edge and a glow leaking through the gap. side=1 stacks down-right, -1 down-left.
+ * selfGlow: when this card itself sits under another one with only an edge showing, it also glows for its own month.
  */
 function stackShadow(layers: Layer[], side: 1 | -1, selfGlow = false): string {
   const parts = [`0 0 0 1px ${selfGlow ? GLOW : 'var(--hc-card-edge)'}`];
-  // 自己压在别的卡下面时，光只从露出来的那条缝往卡堆那一侧透出来
+  // When tucked under another card, the glow only leaks out of the exposed edge, toward the pile side
   if (selfGlow) parts.push(`${2 * side}px 5px 7px -2px ${GLOW}`);
   let dy = 0;
   for (const l of layers) {
@@ -190,44 +190,44 @@ highlighter-calendar.inert,
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
 
 /**
- * <highlighter-deck>：月份卡片流，同屏最多并排两个月，像在触屏上翻东西一样跟手。
+ * <highlighter-deck>: a stream of month cards, at most two side by side, that follows the finger like paging on a touch screen.
  *
- * 平时只显示当前月，下面叠着今年剩下的月份。在空白处（日期格子以外的地方）按住横着拖：
- * - 手底下的卡片跟着手指走。往左拖，卡片往左滑开，下个月从卡堆里出来补上空出来的位置；
- *   往右拖，卡片往右滑开，上个月从屏幕左边外面滑进来；
- * - 一次拖动只翻一张。拖过一小段或轻轻一甩，松手就翻过去；否则弹回原位；
- * - 上一下还没停稳又朝同一方向划，就进入转盘模式：有阻尼的转动，每划一下加一把力；
- * - 点一下：收回成一张，留下点中的那个月。
- * 所有卡片共享同一份选择；属性和 input / change 事件与 <highlighter-calendar> 相同。
+ * Normally only the current month shows, with the rest of the year stacked underneath. Press on blank space (outside the day cells) and drag sideways:
+ * - The card under your finger follows it. Drag left and the card slides away to the left while next month comes out of the pile to fill the gap;
+ *   drag right and the card slides away to the right while last month slides in from off-screen on the left;
+ * - One drag flips one card. Drag a little way or flick lightly and it flips on release; otherwise it springs back;
+ * - Swipe the same way again before the last one settles and it enters spin mode: a damped spinner that gets another push with every swipe;
+ * - Tap: collapse back to one card, keeping the month you tapped.
+ * All cards share a single selection; attributes and input / change events are the same as <highlighter-calendar>.
  */
 export class HighlighterDeck extends HTMLElement {
   static observedAttributes = ['month', 'value', 'spread', ...FORWARDED];
 
   private $deck: HTMLElement;
   private pool: HighlighterCalendar[] = [];
-  /** 每张卡现在显示的月份序号。 */
+  /** Month index each card is currently showing. */
   private assigned = new Map<HighlighterCalendar, number>();
   private view: View;
-  /** 上一次完全停稳时的状态，用来判断要不要发 monthchange / spreadchange。 */
+  /** View at the last full stop, used to decide whether to fire monthchange / spreadchange. */
   private settledView: View;
   private tween: Tween | null = null;
   private spin: Spin | null = null;
-  /** 动画进行中收到的、要等停稳后再做的操作。 */
+  /** Action received mid-animation, deferred until things settle. */
   private pending: 1 | -1 | View | null = null;
   private lastStep = { end: -Infinity, dir: 0 };
   private raf = 0;
   private lastT = 0;
   private selection: string[] = [];
-  /** 有选中日子的月份（月份序号），卡堆据此发光。 */
+  /** Months (month indices) containing selected days; the piles glow for these. */
   private months = new Set<number>();
   private hinting = 0;
   private gesture: Gesture | null = null;
   private shadows = new Map<HighlighterCalendar, string>();
   private navShown: boolean | null = null;
   private ro: ResizeObserver | null = null;
-  /** 可选范围（min / max）：流转不到整月都不可选的月份。 */
+  /** Selectable range (min / max): the stream won't go to months with no selectable days at all. */
   private range = new DayRange();
-  /** 到头的回弹：wiggle 是程序调用时挪一下再回来，back 是拖动松手后从 from 像素弹回 0。 */
+  /** Bounce at the ends: wiggle is a programmatic nudge-and-return; back springs from `from` px back to 0 after a drag is released. */
   private bump: { kind: 'wiggle' | 'back'; from: number; start: number } | null = null;
 
   constructor() {
@@ -280,7 +280,7 @@ export class HighlighterDeck extends HTMLElement {
     } else if (name === 'value') {
       this.value = (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     } else if (name === 'spread') {
-      // 只作为初始状态：一开始就并排两个月
+      // Initial state only: start with two months side by side
       this.view = this.clampView({ ...this.view, b: v !== null ? 1 : 0 });
       this.settledView = { ...this.view };
       this.place();
@@ -291,7 +291,7 @@ export class HighlighterDeck extends HTMLElement {
       }
       if (name === 'min' || name === 'max') {
         this.range.set(name, v);
-        // 卡片已经各自去掉了范围外的选择
+        // Each card has already dropped selections outside the range
         this.selection = this.pool[0].value;
         this.selectionChanged();
         this.jump(this.restingF);
@@ -299,7 +299,7 @@ export class HighlighterDeck extends HTMLElement {
     }
   }
 
-  // ---------- 公开 API ----------
+  // ---------- Public API ----------
 
   get value(): string[] {
     return [...this.selection];
@@ -311,7 +311,7 @@ export class HighlighterDeck extends HTMLElement {
     this.selectionChanged();
   }
 
-  /** 最左边那张（只有一张时就是它）的月份，YYYY-MM；转动中是它将要停下的月份。 */
+  /** Month of the leftmost card (the only one when single), YYYY-MM; while moving, the month it will stop on. */
   get month(): string {
     return keyOf(this.restingF);
   }
@@ -320,7 +320,7 @@ export class HighlighterDeck extends HTMLElement {
     this.setAttribute('month', v);
   }
 
-  /** 是否并排摆着两个月。设为 true 摆出下个月，false 收回成一张。 */
+  /** Whether two months are laid out side by side. true lays out next month; false collapses to one card. */
   get spread(): boolean {
     if (this.spin) return true;
     return (this.tween?.to ?? this.view).b > 0;
@@ -375,17 +375,17 @@ export class HighlighterDeck extends HTMLElement {
     );
   }
 
-  /** 翻到下个月，等同于在空白处往左拖一下。 */
+  /** Flip to next month; same as dragging left once on blank space. */
   next(): void {
     this.swipe(1);
   }
 
-  /** 翻到上个月，等同于在空白处往右拖一下。 */
+  /** Flip to previous month; same as dragging right once on blank space. */
   prev(): void {
     this.swipe(-1);
   }
 
-  /** 直接摆到某个月并收成一张，不播动画（日期框每次展开时用）。 */
+  /** Jump straight to a month and collapse to one card, without animation (used each time the date field opens). */
   show(month: string): void {
     const k = parseKey(month);
     if (k === null) return;
@@ -394,7 +394,7 @@ export class HighlighterDeck extends HTMLElement {
     this.jump(k);
   }
 
-  /** 只有一张的时候让右边卡堆最上面那张探出来抖两下，提示还能再摆出一个月。 */
+  /** With a single card, make the top of the right pile peek out and wiggle twice, hinting that another month can be laid out. */
   hint(): void {
     if (this.moving || this.gesture || this.hinting || this.view.b > 0) return;
     if (!this.inRange({ f: Math.round(this.view.f), b: 1 })) return;
@@ -423,21 +423,21 @@ export class HighlighterDeck extends HTMLElement {
     this.view = { ...this.view, b: 0 };
   }
 
-  // ---------- 翻动与转动 ----------
+  // ---------- Flipping and spinning ----------
 
   private get moving(): boolean {
     return this.tween !== null || this.spin !== null;
   }
 
-  /** 现在（或动完以后）停在哪个月。 */
+  /** The month it rests on now (or once the motion finishes). */
   private get restingF(): number {
     return Math.round(this.tween?.to.f ?? this.spin?.snap ?? this.view.f);
   }
 
   /**
-   * 翻一张：dir=1 下个月（往左翻），-1 上个月（往右翻）。
-   * 只有一张时，往左翻是把下个月摆到右边，往右翻是把上个月摆到左边；
-   * 两张并排时整排平移一格。超出可选范围返回 null。
+   * Flip one card: dir=1 next month (flip left), -1 previous month (flip right).
+   * With one card, flipping left lays next month out on the right and flipping right lays last month out on the left;
+   * with two side by side, the whole row shifts by one slot. Returns null outside the selectable range.
    */
   private stepTarget(from: View, dir: 1 | -1): View | null {
     const f = Math.round(from.f);
@@ -446,14 +446,14 @@ export class HighlighterDeck extends HTMLElement {
     return this.inRange(to) ? to : null;
   }
 
-  /** 这一步里手底下那张卡要走多远（像素）：并排 ↔ 一张 是半格，平移是一格。 */
+  /** How far (px) the card under the finger travels in this step: half a slot for side-by-side <-> single, a full slot for a shift. */
   private travelOf(from: View, to: View): number {
     return Math.abs(to.f - from.f) >= 1 && Math.abs(to.b - from.b) < 0.5 ? this.pitch : this.pitch / 2;
   }
 
   /**
-   * 程序翻一张（或卡片还在动时划了一下）：上一下还没停稳又朝同一方向划，就进入转盘模式；
-   * 转动中每划一下都给转盘加一把力，反方向划就是往回拨。
+   * Programmatic flip (or a swipe while cards are still moving): swiping the same way before the last one settles enters spin mode;
+   * while spinning, each swipe gives the spinner another push, and swiping the other way pulls it back.
    */
   private swipe(dir: 1 | -1): void {
     this.stopHint();
@@ -478,13 +478,13 @@ export class HighlighterDeck extends HTMLElement {
     this.tweenTo(to, dir, STEP_MS, easeInOut);
   }
 
-  /** 到头了：整排朝手指会拖的方向挪一下再弹回来（往左拖是下个月）。 */
+  /** Hit the end: nudge the whole row the way the finger would drag, then bounce back (dragging left means next month). */
   private wiggle(dir: 1 | -1): void {
     this.bump = { kind: 'wiggle', from: -dir * BUMP_PX, start: performance.now() };
     this.kick();
   }
 
-  /** 点一下空白处：收回成一张，留下点中的那个月。转动中点一下就像按住转盘，就近停下再收。 */
+  /** Tap on blank space: collapse to one card, keeping the tapped month. Tapping while spinning is like grabbing the spinner: stop at the nearest month, then collapse. */
   private tap(e: PointerEvent): void {
     if (this.spin) {
       this.spin.snap = Math.min(this.fMax(1), Math.max(this.range.minMonth, Math.round(this.view.f)));
@@ -492,7 +492,7 @@ export class HighlighterDeck extends HTMLElement {
     } else if (this.tween) {
       this.pending = { f: this.tween.to.f, b: 0 };
     } else if (this.view.b > 0) {
-      // 点在右边那张上就留右边那张，否则留左边
+      // Tapped on the right-hand card: keep that one, otherwise keep the left
       const r = this.$deck.getBoundingClientRect();
       const right = e.clientX > r.left + r.width / 2 + this.pitch * 0.1;
       this.tweenTo({ f: this.view.f + (right ? 1 : 0), b: 0 }, 0, STEP_MS, easeInOut);
@@ -510,13 +510,13 @@ export class HighlighterDeck extends HTMLElement {
     this.place();
   }
 
-  /** 摆出来的每张卡（f 到 f+b）都在可选范围内。 */
+  /** Every card laid out (f to f+b) is within the selectable range. */
   private inRange(v: View): boolean {
     this.range.refresh();
     return v.f >= this.range.minMonth - EPS && v.f + v.b <= this.range.maxMonth + EPS;
   }
 
-  /** 把一个状态收进可选范围：左边那张不越界，右边越界就不摆开。 */
+  /** Clamp a view into the selectable range: the left card stays in bounds; if the right one would be out of bounds, don't spread. */
   private clampView(v: View): View {
     this.range.refresh();
     const { minMonth: lo, maxMonth: hi } = this.range;
@@ -524,7 +524,7 @@ export class HighlighterDeck extends HTMLElement {
     return { f, b: Math.min(v.b, Math.max(0, hi - f)) };
   }
 
-  /** 并排 b 张时最左那张最多能到哪个月。 */
+  /** Furthest month the leftmost card can reach with b cards side by side. */
   private fMax(b: number): number {
     const { minMonth: lo, maxMonth: hi } = this.range;
     return Math.max(lo, hi - b);
@@ -548,7 +548,7 @@ export class HighlighterDeck extends HTMLElement {
     let count = 0;
     const tw = this.tween;
     if (tw) {
-      // 从正在播放的这一下接过当时的速度；如果那一下是平移，它也算一张
+      // Pick up the velocity of the step currently playing; if that step was a shift, it counts as one card too
       const p = clamp01((performance.now() - tw.start) / tw.ms);
       v = ((tw.to.f - tw.from.f) * slope(tw.ease, p)) / (tw.ms / 1000);
       origin = Math.round(tw.from.f);
@@ -564,7 +564,7 @@ export class HighlighterDeck extends HTMLElement {
   private push(dir: 1 | -1): void {
     const s = this.spin!;
     if (dir !== s.dir) {
-      // 反方向拨：从现在的位置重新数
+      // Pulling the other way: start counting again from the current position
       s.origin = Math.round(this.view.f);
       s.count = 0;
       s.dir = dir;
@@ -613,7 +613,7 @@ export class HighlighterDeck extends HTMLElement {
     if (s.snap === null) {
       s.v *= Math.exp(-SPIN.damping * dt);
       f += s.v * dt;
-      // 慢下来了：按这个速度本来会滑到哪，就停在离那最近的月份，但至少划几下就转过几个月
+      // Slowed down: stop at the month nearest to where it would coast at this speed, but turn at least as many months as there were swipes
       if (Math.abs(s.v) < SPIN.snapSpeed) {
         const rest = Math.round(f + s.v / SPIN.damping);
         const least = s.origin + s.dir * s.count;
@@ -624,13 +624,13 @@ export class HighlighterDeck extends HTMLElement {
       s.v += (-w * w * (f - s.snap) - 2 * w * s.v) * dt;
       f += s.v * dt;
     }
-    // 转到可选范围的尽头：撞墙停住
+    // Reached the end of the selectable range: hit the wall and stop
     if (f < lo || f > hi) {
       f = Math.min(hi, Math.max(lo, f));
       s.v = 0;
       s.snap = f;
     }
-    // 转起来的时候两张并排；右边那张超出范围就不摆开
+    // While spinning, show two side by side; if the right card is out of range, don't spread
     const tb = clamp01(this.range.maxMonth - f);
     const k = 1 - Math.exp(-SPIN.open * dt);
     const nb = b + (tb - b) * k;
@@ -646,7 +646,7 @@ export class HighlighterDeck extends HTMLElement {
     this.place();
   }
 
-  /** 一段动作停稳了：有排队的操作就接着做，否则真正静止下来并发事件。 */
+  /** A motion has settled: run any queued action, otherwise come to a real stop and fire events. */
   private settle(): void {
     const next = this.pending;
     this.pending = null;
@@ -674,13 +674,13 @@ export class HighlighterDeck extends HTMLElement {
     if (from.b !== this.view.b) this.emit('spreadchange', { spread: this.view.b > 0 });
   }
 
-  // ---------- 摆放 ----------
+  // ---------- Layout ----------
 
   private get cardWidth(): number {
     return this.pool[0].offsetWidth || 352;
   }
 
-  /** 相邻两张卡之间的距离（一格）。 */
+  /** Distance between two adjacent cards (one slot). */
   private get pitch(): number {
     const gap = parseFloat(getComputedStyle(this).getPropertyValue('--deck-gap')) || 20;
     return this.cardWidth + gap;
@@ -692,8 +692,8 @@ export class HighlighterDeck extends HTMLElement {
   }
 
   /**
-   * 月份 k 这张卡下面（side 方向）的卡堆：离今天 HORIZON 个月以内、且在可选范围内的每个月一层；
-   * 更远的月份压成最底下一层——哪怕转到很远，卡堆也不会无限变厚，远处有选中的日子照样发光。
+   * The pile under card k (on the `side` side): one layer per month within HORIZON months of today and inside the selectable range;
+   * further months are squashed into one bottom layer, so the pile never grows without bound however far you spin, and far-off selected days still glow.
    */
   private pile(k: number, side: 1 | -1): Layer[] {
     const bound = side > 0 ? this.range.maxMonth : this.range.minMonth;
@@ -706,7 +706,7 @@ export class HighlighterDeck extends HTMLElement {
       layers.push({ glow: this.months.has(m), gap: Math.max(0.9, STACK_DY * 0.9 ** i) + yearGap });
       i++;
     }
-    // 可选范围比两年还远：把更远的月份压成一层
+    // Selectable range extends beyond two years: squash the further months into one layer
     if (limit !== bound) {
       const edge = side > 0 ? Math.max(limit, k) : Math.min(limit, k);
       let far = false;
@@ -716,7 +716,7 @@ export class HighlighterDeck extends HTMLElement {
     return layers;
   }
 
-  /** 现在整排额外挪动的像素：拖到头时的阻尼跟手，或者松手 / 程序调用后的回弹。 */
+  /** Extra pixels the whole row is shifted right now: rubber-band follow at the ends, or the bounce back after a release / programmatic call. */
   private nudge(): number {
     const g = this.gesture;
     if (g?.mode === 'drag' && !g.target) return g.rubber;
@@ -727,17 +727,17 @@ export class HighlighterDeck extends HTMLElement {
   }
 
   /**
-   * 按当前状态（可以是动到一半）给每个要露面的月份分配一张卡并摆好：
-   * 并排的一两张在桌面上居中；右边多出来的压在最右那张下面当卡堆，
-   * 左边多出来的压在最左那张下面当另一边的卡堆（过去的月份）。
+   * For the current (possibly mid-motion) view, assign a card to each month that should be visible and position it:
+   * the one or two side-by-side cards are centred on the table; extras on the right are tucked under the rightmost card as its pile,
+   * and extras on the left are tucked under the leftmost card as the other pile (past months).
    */
   private place(): void {
     if (!this.isConnected) return;
     const { f, b } = this.view;
     const step = this.pitch;
-    // 并排两张时整体往左挪半格，让两张一起居中
+    // With two side by side, shift everything left by half a slot so the pair is centred
     const shift = (-b * step) / 2 + this.nudge();
-    // 整月都不可选的月份不发卡
+    // Don't deal cards for months with no selectable days at all
     const lo = Math.max(this.range.minMonth, Math.ceil(f - 1 - EPS));
     const hi = Math.min(this.range.maxMonth, Math.floor(f + b + 1 + EPS));
 
@@ -752,7 +752,7 @@ export class HighlighterDeck extends HTMLElement {
       if (!el) break;
       this.assigned.set(el, k);
       if (el.month !== key) {
-        // 换月份前先摆平，日历才能按正常尺寸量格子、画笔迹
+        // Lay it flat before changing month so the calendar can measure its cells and draw ink at normal size
         el.style.transform = 'none';
         el.month = key;
       }
@@ -771,7 +771,7 @@ export class HighlighterDeck extends HTMLElement {
       } else {
         const u = k - f;
         if (u < -EPS) {
-          // 左边：压在最左那张下面的卡堆；只有一张时看不见，摆开或者里面有要发光的月份才露出来
+          // Left: the pile under the leftmost card; invisible with a single card, showing only when spread or when it holds a glowing month
           const d = -u;
           x = shift - d * STACK_DX;
           y = d * STACK_DY;
@@ -791,7 +791,7 @@ export class HighlighterDeck extends HTMLElement {
           x = u * step + shift;
           onTable = true;
         }
-        // 离桌面越远越靠下：两边的卡堆都压在桌面那一两张下面
+        // The further from the table, the lower it sits: both piles tuck under the one or two cards on the table
         el.style.zIndex = String(Math.round(100 - Math.max(-u, u - b, 0) * 10));
         el.toggleAttribute('vignette', k < this.todayIndex);
       }
@@ -807,7 +807,7 @@ export class HighlighterDeck extends HTMLElement {
       }
     }
 
-    // 只有一张时可以用箭头翻月；并排后改用拖动
+    // With a single card, the arrows flip the month; once spread, dragging takes over
     const nav = rest && b < 0.5;
     if (nav !== this.navShown) {
       this.navShown = nav;
@@ -815,7 +815,7 @@ export class HighlighterDeck extends HTMLElement {
     }
   }
 
-  // ---------- 选择与手势 ----------
+  // ---------- Selection and gestures ----------
 
   private sync(from: HighlighterCalendar): void {
     this.selection = from.value;
@@ -828,7 +828,7 @@ export class HighlighterDeck extends HTMLElement {
     if (!this.moving) this.place();
   }
 
-  /** 卡片自己翻了月（只有一张时点箭头、键盘移出本月）：整条流跟着走。 */
+  /** A card changed month by itself (arrow click with a single card, or keyboard moving out of the month): the whole stream follows. */
   private onCardMonth(el: HighlighterCalendar): void {
     const k0 = this.assigned.get(el);
     const k1 = parseKey(el.month);
@@ -845,7 +845,7 @@ export class HighlighterDeck extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
-  /** 空白处：日期格子和按钮以外的地方，卡片上、卡片之间、卡片旁边都算。 */
+  /** Blank space: anywhere other than day cells and buttons; on a card, between cards and beside them all count. */
   private isBlank(e: Event): boolean {
     return !e
       .composedPath()
@@ -871,7 +871,7 @@ export class HighlighterDeck extends HTMLElement {
     try {
       this.$deck.setPointerCapture(e.pointerId);
     } catch {
-      // 合成事件没有真实指针，拿不到捕获也没关系
+      // Synthetic events have no real pointer; failing to capture is fine
     }
   }
 
@@ -910,7 +910,7 @@ export class HighlighterDeck extends HTMLElement {
     }
     if (g.mode !== 'drag') return;
 
-    // 跟手：往左拖是下个月，往右拖是上个月；拖回起点另一边就换方向
+    // Follow the finger: drag left for next month, right for previous; dragging back past the start switches direction
     const dir: 1 | -1 = dx < 0 ? 1 : -1;
     if (dir !== g.dir) {
       g.dir = dir;
@@ -938,7 +938,7 @@ export class HighlighterDeck extends HTMLElement {
     if (g.mode !== 'drag') return;
 
     if (!g.target) {
-      // 拖到头了：松手弹回
+      // Hit the end: spring back on release
       this.view = { ...g.base };
       if (g.rubber) this.bump = { kind: 'back', from: g.rubber, start: performance.now() };
       this.$deck.classList.remove('busy');
