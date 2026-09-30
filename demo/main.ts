@@ -2,7 +2,7 @@ import '../src/index';
 import type { CalendarChangeDetail } from '../src/index';
 
 const $ = (id: string) => document.getElementById(id)!;
-const cal = document.querySelector('highlighter-calendar')!;
+const cal = document.querySelector('highlighter-deck')!;
 
 function pick(groupId: string, attr: string, apply: (v: string) => void) {
   const group = $(groupId);

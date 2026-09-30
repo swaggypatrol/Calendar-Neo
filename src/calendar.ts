@@ -61,6 +61,8 @@ const STYLE = /* css */ `
   box-sizing: border-box;
 }
 header {
+  user-select: none;
+  -webkit-user-select: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -80,6 +82,7 @@ header {
   cursor: pointer;
 }
 .nav:hover { background: var(--hc-line); }
+.hc.hide-nav .nav { visibility: hidden; }
 .nav:focus-visible { outline: 2px solid var(--hc-accent); }
 .weekdays {
   display: grid;
@@ -195,6 +198,7 @@ export class HighlighterCalendar extends HTMLElement {
     'brush-size',
     'hold-delay',
     'value',
+    'hide-nav',
   ];
 
   readonly engine = new HighlighterEngine();
@@ -310,6 +314,9 @@ export class HighlighterCalendar extends HTMLElement {
       case 'hold-delay':
         this.holdDelay = Math.max(80, Number(v) || 320);
         break;
+      case 'hide-nav':
+        this.shadowRoot!.querySelector('.hc')!.classList.toggle('hide-nav', v !== null);
+        break;
       case 'value':
         this.value = (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
         break;
@@ -324,7 +331,12 @@ export class HighlighterCalendar extends HTMLElement {
   }
 
   set value(keys: string[]) {
+    const visible = [...this.dayEls.keys()];
+    const shown = () => visible.filter((k) => this.engine.isSelected(k)).join();
+    const before = shown();
     this.engine.setSelection(keys);
+    // 本月可见的日期没变（比如别的月份的卡片改了选择）：不重画，保留手绘笔迹
+    if (shown() === before) return;
     this.syncDom();
     this.measure(true);
   }
@@ -372,15 +384,15 @@ export class HighlighterCalendar extends HTMLElement {
     this.kick();
   }
 
-  /** 清空所有选择（带淡出动画），会触发 change。 */
-  clear(): void {
+  /** 清空所有选择（带淡出动画）。silent=true 时不触发 change。 */
+  clear(silent = false): void {
     const before = this.value;
     if (!before.length) return;
     this.engine.setSelection([]);
     this.syncDom();
     this.updateRuns();
     this.ink.prune();
-    this.emit('change', before);
+    if (!silent) this.emit('change', before);
     this.kick();
   }
 

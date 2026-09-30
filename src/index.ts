@@ -1,6 +1,8 @@
 import { HighlighterCalendar } from './calendar';
+import { HighlighterDeck } from './deck';
 
 export { HighlighterCalendar, dateKey, type CalendarChangeDetail } from './calendar';
+export { HighlighterDeck } from './deck';
 export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowLayout, type DayRect } from './engine';
 
 let baseDefined = false;
@@ -15,3 +17,7 @@ export function defineHighlighterCalendar(tag = 'highlighter-calendar'): void {
 }
 
 defineHighlighterCalendar();
+
+if (typeof customElements !== 'undefined' && !customElements.get('highlighter-deck')) {
+  customElements.define('highlighter-deck', HighlighterDeck);
+}
