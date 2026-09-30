@@ -1,0 +1,32 @@
+{
+  "name": "highlighter-calendar",
+  "version": "0.1.0",
+  "description": "像荧光笔一样划选日期的日历 Web Component：左键涂、右键擦，每个日期 8x8 格子，超过阈值即选中。",
+  "type": "module",
+  "main": "./dist/highlighter-calendar.umd.cjs",
+  "module": "./dist/highlighter-calendar.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/highlighter-calendar.js",
+      "require": "./dist/highlighter-calendar.umd.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && tsc -p tsconfig.build.json",
+    "build:demo": "vite build --mode demo",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.3"
+  }
+}

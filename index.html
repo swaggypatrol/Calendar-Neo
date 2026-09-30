@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>荧光笔日历 · Calendar Neo</title>
+    <link rel="stylesheet" href="/demo/style.css" />
+  </head>
+  <body>
+    <main>
+      <section class="intro">
+        <h1>荧光笔日历</h1>
+        <p>不用点起止日期，像拿荧光笔一样在想要的日子上划过去就行。</p>
+        <ul>
+          <li><b>左键 / 手指划过</b>：涂色。一个日期被涂满 <span id="th-inline">35</span>/64 格就算选中。</li>
+          <li><b>右键划过</b>：橡皮擦，逻辑一样，只是反过来。</li>
+          <li><b>按住不动</b>：墨水会洇开变深，停得够久这一天就被一笔划过选中；按在两个数字中间，会先洇到旁边那天的一半，再按住就一起选中。</li>
+          <li><b>来回涂</b>：颜色一层层叠深，到一定程度就不再变深。</li>
+          <li><b>单击</b>：直接选中那一天；键盘方向键移动，空格 / 回车切换。</li>
+        </ul>
+      </section>
+
+      <section class="stage">
+        <highlighter-calendar id="cal"></highlighter-calendar>
+
+        <div class="panel">
+          <div class="field">
+            <label>触屏工具</label>
+            <div class="seg" id="tool">
+              <button data-tool="highlight" class="on">荧光笔</button>
+              <button data-tool="erase">橡皮擦</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="threshold">选中阈值 <output id="th-out">35</output>/64</label>
+            <input id="threshold" type="range" min="8" max="60" value="35" />
+          </div>
+          <div class="field">
+            <label>颜色</label>
+            <div class="swatches" id="colors">
+              <button style="--c: #ffd21f" data-color="#ffd21f" class="on" aria-label="黄"></button>
+              <button style="--c: #7ef08a" data-color="#7ef08a" aria-label="绿"></button>
+              <button style="--c: #ff8fc8" data-color="#ff8fc8" aria-label="粉"></button>
+              <button style="--c: #7cc8ff" data-color="#7cc8ff" aria-label="蓝"></button>
+              <button style="--c: #ffa94d" data-color="#ffa94d" aria-label="橙"></button>
+            </div>
+          </div>
+          <div class="field">
+            <label>每周从</label>
+            <div class="seg" id="week">
+              <button data-ws="1" class="on">周一</button>
+              <button data-ws="0">周日</button>
+            </div>
+          </div>
+          <button id="clear" class="clear">全部清除</button>
+        </div>
+      </section>
+
+      <section class="out">
+        <h2>已选 <span id="count">0</span> 天</h2>
+        <p id="ranges" class="ranges">还没有选日期</p>
+        <pre id="json">[]</pre>
+        <ol id="log" class="log"></ol>
+      </section>
+    </main>
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+</html>
