@@ -47,7 +47,7 @@ const STYLE = /* css */ `
 }
 @media (prefers-color-scheme: dark) {
   :host {
-    --hc-bg: #1c1f24;
+    --hc-bg: #2a2e35;
     --hc-fg: #e8eaed;
     --hc-muted: #8d949e;
     --hc-line: rgba(255, 255, 255, 0.08);
@@ -85,6 +85,11 @@ header {
 }
 .nav:hover { background: var(--hc-line); }
 .hc.hide-nav .nav { visibility: hidden; }
+/* 已经过去的月份：一圈暗角 */
+.hc.vignette { box-shadow: inset 0 0 44px 10px rgba(80, 60, 40, 0.16); }
+@media (prefers-color-scheme: dark) {
+  .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
+}
 .nav:focus-visible { outline: 2px solid var(--hc-accent); }
 .weekdays {
   display: grid;
@@ -201,6 +206,7 @@ export class HighlighterCalendar extends HTMLElement {
     'hold-delay',
     'value',
     'hide-nav',
+    'vignette',
   ];
 
   readonly engine = new HighlighterEngine();
@@ -315,6 +321,9 @@ export class HighlighterCalendar extends HTMLElement {
         break;
       case 'hold-delay':
         this.holdDelay = Math.max(80, Number(v) || 320);
+        break;
+      case 'vignette':
+        this.shadowRoot!.querySelector('.hc')!.classList.toggle('vignette', v !== null);
         break;
       case 'hide-nav':
         this.shadowRoot!.querySelector('.hc')!.classList.toggle('hide-nav', v !== null);

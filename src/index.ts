@@ -1,8 +1,10 @@
 import { HighlighterCalendar } from './calendar';
 import { HighlighterDeck } from './deck';
+import { HighlighterPicker } from './picker';
 
 export { HighlighterCalendar, dateKey, type CalendarChangeDetail } from './calendar';
 export { HighlighterDeck } from './deck';
+export { HighlighterPicker, toRanges } from './picker';
 export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowLayout, type DayRect } from './engine';
 
 let baseDefined = false;
@@ -20,4 +22,8 @@ defineHighlighterCalendar();
 
 if (typeof customElements !== 'undefined' && !customElements.get('highlighter-deck')) {
   customElements.define('highlighter-deck', HighlighterDeck);
+}
+
+if (typeof customElements !== 'undefined' && !customElements.get('highlighter-picker')) {
+  customElements.define('highlighter-picker', HighlighterPicker);
 }

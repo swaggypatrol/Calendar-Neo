@@ -6,9 +6,9 @@ const STACK_DX = 1.2;
 const STACK_DY = 3.2;
 /** 划一下（只动一张）的动画时长，先加速再减速。 */
 const STEP_MS = 720;
-/** 飞出 / 飞进屏幕左边时侧过去的角度，有一点 Cover Flow 的味道。 */
-const TILT = 48;
-/** 同时最多要露面的卡：左边飞出去的一张、三张摆开的、右边卡堆最上面一张。 */
+/** 卡堆按月分层能显示多远（离今天的月数），更远的月份压成最底下一层。 */
+const HORIZON = 24;
+/** 同时最多要露面的卡：左边卡堆最上面一张、三张摆开的、右边卡堆最上面一张。 */
 const POOL_SIZE = 6;
 const EPS = 1e-6;
 
@@ -78,18 +78,34 @@ const parseKey = (s: string): number | null => {
   return m ? monthIndex(Number(m[1]), Math.min(11, Math.max(0, Number(m[2]) - 1))) : null;
 };
 
-/** 一张卡片下面叠着这一年剩下的月份：1 月下面 11 张，12 月就是最后一张。 */
-function stackShadow(n: number): string {
-  const parts = ['0 0 0 1px var(--hc-card-edge)'];
-  for (let i = 1; i <= n; i++) {
-    const dx = (i * STACK_DX).toFixed(1);
-    const dy = (i * STACK_DY).toFixed(1);
-    parts.push(`${dx}px ${dy}px 0 -1px var(--hc-card-bg)`, `${dx}px ${dy}px 0 0 var(--hc-card-edge)`);
+/** 卡堆里的一层（一个月）：glow 表示这个月里有选中的日子，gap 是它和上一层之间的缝。 */
+interface Layer {
+  glow: boolean;
+  gap: number;
+}
+
+const GLOW = 'color-mix(in srgb, var(--hc-ink, #ffd21f) 85%, transparent)';
+
+/**
+ * 画在卡片自己的阴影里的卡堆：下面按月一层层叠着，越往下越薄，跨年处多一道缝。
+ * 有选中日子的那层边缘用荧光笔的颜色，并从缝里透出一圈光。side=1 往右下叠，-1 往左下叠。
+ * selfGlow：这张卡自己压在别的卡下面、露出一条边时，也按它自己的月份发光。
+ */
+function stackShadow(layers: Layer[], side: 1 | -1, selfGlow = false): string {
+  const parts = [`0 0 0 1px ${selfGlow ? GLOW : 'var(--hc-card-edge)'}`];
+  // 自己压在别的卡下面时，光只从露出来的那条缝往卡堆那一侧透出来
+  if (selfGlow) parts.push(`${2 * side}px 5px 7px -2px ${GLOW}`);
+  let dy = 0;
+  for (const l of layers) {
+    dy += l.gap;
+    const dx = ((dy * STACK_DX) / STACK_DY) * side;
+    const x = dx.toFixed(1);
+    const y = dy.toFixed(1);
+    parts.push(`${x}px ${y}px 0 -1px var(--hc-card-bg)`, `${x}px ${y}px 0 0 ${l.glow ? GLOW : 'var(--hc-card-edge)'}`);
+    if (l.glow) parts.push(`${(dx + side).toFixed(1)}px ${(dy + 2.5).toFixed(1)}px 6px -2px ${GLOW}`);
   }
-  parts.push(
-    `${(n * STACK_DX + 2).toFixed(1)}px ${(n * STACK_DY + 8).toFixed(1)}px 22px rgba(0, 0, 0, 0.10)`,
-    '0 1px 2px rgba(0, 0, 0, 0.06)',
-  );
+  const sx = (((dy * STACK_DX) / STACK_DY) * side + 2 * side).toFixed(1);
+  parts.push(`${sx}px ${(dy + 8).toFixed(1)}px 22px rgba(0, 0, 0, 0.10)`, '0 1px 2px rgba(0, 0, 0, 0.06)');
   return parts.join(', ');
 }
 
@@ -103,7 +119,7 @@ const STYLE = /* css */ `
 }
 @media (prefers-color-scheme: dark) {
   :host {
-    --hc-card-bg: #1c1f24;
+    --hc-card-bg: #2a2e35;
     --hc-card-edge: rgba(255, 255, 255, 0.14);
   }
 }
@@ -163,8 +179,10 @@ export class HighlighterDeck extends HTMLElement {
   private lastStep = { end: -Infinity, dir: 0 };
   private raf = 0;
   private lastT = 0;
-  private xOff = -2000;
   private selection: string[] = [];
+  /** 有选中日子的月份（月份序号），卡堆据此发光。 */
+  private months = new Set<number>();
+  private hinting = 0;
   private gesture: { id: number; x: number; y: number; t: number; fired: boolean } | null = null;
   private shadows = new Map<HighlighterCalendar, string>();
   private navShown: boolean | null = null;
@@ -243,6 +261,7 @@ export class HighlighterDeck extends HTMLElement {
   set value(keys: string[]) {
     this.selection = [...new Set(keys)].sort();
     for (const c of this.pool) c.value = this.selection;
+    this.selectionChanged();
   }
 
   /** 中间那张（收起时唯一那张）的月份，YYYY-MM；转动中是它将要停下的月份。 */
@@ -284,6 +303,7 @@ export class HighlighterDeck extends HTMLElement {
   }
 
   set color(v: string) {
+    this.style.setProperty('--hc-ink', v);
     for (const c of this.pool) c.color = v;
   }
 
@@ -300,6 +320,7 @@ export class HighlighterDeck extends HTMLElement {
     if (!before.length) return;
     this.selection = [];
     for (const c of this.pool) c.clear(true);
+    this.selectionChanged();
     this.dispatchEvent(
       new CustomEvent('change', {
         detail: { value: [], added: [], removed: before },
@@ -319,6 +340,37 @@ export class HighlighterDeck extends HTMLElement {
     this.swipe(-1);
   }
 
+  /** 直接摆到某个月并收成一叠，不播动画（日期框每次展开时用）。 */
+  show(month: string): void {
+    const k = parseKey(month);
+    if (k === null) return;
+    if (this.hinting) cancelAnimationFrame(this.hinting);
+    this.hinting = 0;
+    this.view = { f: k, a: 0, b: 0 };
+    this.jump(k);
+  }
+
+  /** 收着的时候让右边卡堆最上面那张探出来抖两下，提示还能再摆出一个月。 */
+  hint(): void {
+    if (this.moving || this.hinting || this.view.a > 0 || this.view.b > 0) return;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = (now - t0) / 1000;
+      if (this.moving || t > 1.1) {
+        this.hinting = 0;
+        if (!this.moving) {
+          this.view = { ...this.view, b: 0 };
+          this.place();
+        }
+        return;
+      }
+      this.view = { ...this.view, b: 0.1 * Math.abs(Math.sin((t * Math.PI) / 0.32)) * Math.exp(-t * 2.4) };
+      this.place();
+      this.hinting = requestAnimationFrame(tick);
+    };
+    this.hinting = requestAnimationFrame(tick);
+  }
+
   // ---------- 划动与转动 ----------
 
   private get moving(): boolean {
@@ -331,6 +383,11 @@ export class HighlighterDeck extends HTMLElement {
    * 反方向划就是往回拨。
    */
   private swipe(dir: 1 | -1): void {
+    if (this.hinting) {
+      cancelAnimationFrame(this.hinting);
+      this.hinting = 0;
+      this.view = { ...this.view, b: 0 };
+    }
     if (this.spin) {
       this.push(dir);
     } else if (this.tween) {
@@ -374,7 +431,6 @@ export class HighlighterDeck extends HTMLElement {
 
   private begin(): void {
     if (this.moving) return;
-    this.xOff = this.offscreenX();
     this.$deck.classList.add('busy');
   }
 
@@ -513,12 +569,29 @@ export class HighlighterDeck extends HTMLElement {
     return this.cardWidth + gap;
   }
 
-  /** 屏幕左边外面：那个看不见的、反方向的卡堆。 */
-  private offscreenX(): number {
-    const r = this.$deck.getBoundingClientRect();
-    const w = this.cardWidth;
-    const cellLeft = r.left + (r.width - w) / 2;
-    return Math.min(-(cellLeft + w + 60), -2 * this.pitch - 60);
+  private get todayIndex(): number {
+    const now = new Date();
+    return monthIndex(now.getFullYear(), now.getMonth());
+  }
+
+  /**
+   * 月份 k 这张卡下面（side 方向）的卡堆：离今天 HORIZON 个月以内每个月一层，
+   * 更远的月份压成最底下一层——哪怕转到很远，卡堆也不会无限变厚，远处有选中的日子照样发光。
+   */
+  private pile(k: number, side: 1 | -1): Layer[] {
+    const limit = this.todayIndex + side * HORIZON;
+    const layers: Layer[] = [];
+    let i = 0;
+    for (let m = k + side; side > 0 ? m <= limit : m >= limit; m += side) {
+      const yearGap = m0Of(m) === (side > 0 ? 0 : 11) ? 1.8 : 0;
+      layers.push({ glow: this.months.has(m), gap: Math.max(0.9, STACK_DY * 0.9 ** i) + yearGap });
+      i++;
+    }
+    const edge = side > 0 ? Math.max(limit, k) : Math.min(limit, k);
+    let far = false;
+    for (const m of this.months) if (side > 0 ? m > edge : m < edge) far = true;
+    layers.push({ glow: far, gap: 1.6 });
+    return layers;
   }
 
   /**
@@ -555,42 +628,46 @@ export class HighlighterDeck extends HTMLElement {
       const k = this.assigned.get(el);
       let x = 0;
       let y = 0;
-      let tilt = 0;
       let opacity = 1;
-      let pile = 0;
+      let pileSide: 1 | -1 | 0 = 0;
       let onTable = false;
       if (k === undefined) {
         opacity = 0;
       } else {
         const u = k - f;
         if (u < -a - EPS) {
-          const d = Math.min(1, -a - u);
-          x = lerp(u * step, this.xOff, d);
+          // 左边：压在最左那张下面的卡堆（过去的月份）；收起时看不见，摆开后才出现
+          const d = u < -a - 1 - EPS ? 2 : -a - u;
+          x = -a * step - d * STACK_DX;
           y = d * STACK_DY;
-          tilt = d * TILT;
-          if (d >= 1 - EPS) opacity = 0;
+          if (d > 1 + EPS) opacity = 0;
+          else {
+            pileSide = -1;
+            // 收着的时候，只有左边卡堆里有选过日子的月份（要发光提醒）才露出来
+            const glowing = this.pile(k, -1).some((l) => l.glow) || this.months.has(k);
+            opacity = glowing ? 1 : Math.min(1, Math.max(a, b) * 1.5);
+          }
         } else if (u > b + EPS) {
+          // 右边：压在最右那张下面的卡堆
           const d = u - b;
           x = b * step + d * STACK_DX;
           y = d * STACK_DY;
-          if (d > 1 + EPS) {
-            opacity = 0;
-          } else {
-            pile = 11 - m0Of(k);
-            // 新一年的 1 月：上一年 12 月下面本来没有卡堆，滑出来时才淡入
-            if (m0Of(k) === 0) opacity = Math.min(1, Math.max(0, 1 - d));
-          }
+          if (d > 1 + EPS) opacity = 0;
+          else pileSide = 1;
         } else {
           x = u * step;
           onTable = true;
         }
-        el.style.zIndex = String(Math.round(100 - u * 10));
+        // 离中间越远越靠下：两边的卡堆都压在桌面那几张下面
+        el.style.zIndex = String(Math.round(100 - Math.abs(u) * 10));
+        el.toggleAttribute('vignette', k < this.todayIndex);
       }
-      el.style.transform = `translate(${x}px, ${y}px)${tilt ? ` rotateY(${tilt}deg)` : ''}`;
+      el.style.transform = `translate(${x}px, ${y}px)`;
       el.style.opacity = opacity < 1 ? String(opacity) : '';
       el.classList.toggle('hidden', opacity <= 0);
       el.classList.toggle('inert', !onTable || !rest);
-      const shadow = stackShadow(pile);
+      const shadow =
+        pileSide && k !== undefined ? stackShadow(this.pile(k, pileSide), pileSide, this.months.has(k)) : stackShadow([], 1);
       if (this.shadows.get(el) !== shadow) {
         this.shadows.set(el, shadow);
         el.style.boxShadow = shadow;
@@ -598,7 +675,7 @@ export class HighlighterDeck extends HTMLElement {
     }
 
     // 收起时中间那张可以用箭头翻月；摆开后改用左右划
-    const nav = rest && a === 0 && b === 0;
+    const nav = rest && a < 0.5 && b < 0.5;
     if (nav !== this.navShown) {
       this.navShown = nav;
       for (const el of this.pool) el.toggleAttribute('hide-nav', !nav);
@@ -610,6 +687,12 @@ export class HighlighterDeck extends HTMLElement {
   private sync(from: HighlighterCalendar): void {
     this.selection = from.value;
     for (const c of this.pool) if (c !== from) c.value = this.selection;
+    this.selectionChanged();
+  }
+
+  private selectionChanged(): void {
+    this.months = new Set(this.selection.map((d) => monthIndex(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1)));
+    if (!this.moving) this.place();
   }
 
   /** 卡片自己翻了月（收起时点箭头、键盘移出本月）：整条流跟着走。 */

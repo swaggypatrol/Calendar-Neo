@@ -9,21 +9,27 @@
   <body>
     <main>
       <section class="intro">
-        <h1>荧光笔日历</h1>
-        <p>不用点起止日期，像拿荧光笔一样在想要的日子上划过去就行。</p>
+        <h1>荧光笔日历 · 预订日期框</h1>
+        <p>点一下「日期」框，它会长成日历。像拿荧光笔一样在想要的日子上划过去就行。</p>
         <ul>
-          <li><b>左键 / 手指划过</b>：涂色。一个日期被涂满 <span id="th-inline">35</span>/64 格就算选中。</li>
-          <li><b>右键划过</b>：橡皮擦，逻辑一样，只是反过来。</li>
-          <li><b>按住不动</b>：墨水会洇开变深，停得够久这一天就被一笔划过选中；按在两个数字中间，会先洇到旁边那天的一半，再按住就一起选中。</li>
-          <li><b>来回涂</b>：颜色一层层叠深，到一定程度就不再变深。</li>
-          <li><b>多个月</b>：像 iTunes 的 Cover Flow。卡片下面叠着今年剩下的月份，在卡片空白处（比如标题栏）往右划，下个月从卡堆里滑出来；往左划，上个月从屏幕外飞进来。三个月摆满后再划，整条流就转起来，甩得越快转过的月份越多。点一下空白处收回成一叠。</li>
-          <li><b>单击</b>：直接选中那一天；键盘方向键移动，空格 / 回车切换。</li>
+          <li><b>左键 / 手指划过</b>：涂色。一个日期被涂满 <span id="th-inline">35</span>/64 格就算选中；<b>右键</b>是橡皮擦。</li>
+          <li><b>按住不动</b>：墨水洇开变深，停得够久这一天就被一笔划过选中。<b>来回涂</b>颜色叠深到上限为止。</li>
+          <li><b>多个月</b>：在日期格子以外的空白处往右划，下个月从右边卡堆里滑出；往左划，上个月从左边卡堆里滑出。划一下只动一张，接连快速地划就变成有阻尼的转盘。点一下空白处收回成一叠。</li>
+          <li><b>卡堆</b>：两年以内每个月一层，越往下越薄；选过日子的月份即使压在下面，那一层也会从缝里透出荧光笔的颜色。已经过去的月份卡片有一圈暗角。</li>
+          <li><b>日期框</b>：选好后写出日期段；选了好几段时变成滚轮，左右拖、滚轮或点两边的箭头都能转，点一下就打开到那一段所在的月份。</li>
         </ul>
       </section>
 
-      <section class="stage">
-        <highlighter-deck id="cal"></highlighter-deck>
+      <section class="booking">
+        <div class="bar">
+          <div class="slot"><b>目的地</b><span>搜索目的地</span></div>
+          <highlighter-picker id="cal"></highlighter-picker>
+          <div class="slot"><b>人数</b><span>添加人数</span></div>
+          <button class="go" type="button" aria-label="搜索">搜索</button>
+        </div>
+      </section>
 
+      <section class="stage">
         <div class="panel">
           <div class="field">
             <label>触屏工具</label>

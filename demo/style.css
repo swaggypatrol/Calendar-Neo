@@ -18,13 +18,25 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); }
-main { max-width: 1240px; margin: 0 auto; padding: 32px 16px 64px; }
+main { max-width: 1240px; min-height: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
 h1 { margin: 0 0 6px; font-size: 1.7rem; }
 h2 { font-size: 1.05rem; margin: 0 0 8px; }
 .intro p { margin: 0 0 10px; color: var(--muted); }
 .intro ul { margin: 0 0 24px; padding-left: 1.2em; line-height: 1.7; font-size: 0.93rem; }
 .stage { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 highlighter-deck { flex: 1 1 100%; }
+.booking { display: flex; justify-content: center; margin: 8px 0 28px; position: relative; z-index: 5; }
+.bar {
+  display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+.bar .slot { display: grid; gap: 2px; padding: 12px 28px; min-width: 11rem; font-size: 0.8rem; }
+.bar .slot span { color: var(--muted); font-size: 1rem; }
+.bar .go {
+  appearance: none; border: 0; border-radius: 999px; padding: 14px 22px; margin-left: 4px;
+  background: #222; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+@media (prefers-color-scheme: dark) { .bar .go { background: #eceef1; color: #121418; } }
 .panel {
   flex: 1 1 100%;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
