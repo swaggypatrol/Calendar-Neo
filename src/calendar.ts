@@ -299,7 +299,9 @@ export class HighlighterCalendar extends HTMLElement {
   }
 
   connectedCallback(): void {
-    this.render();
+    // 已经画过的日历被挪到别的容器里（比如翻页时换到纸张背面）：不重画，保留手画的笔迹
+    if (this.cells.length) this.measure();
+    else this.render();
     this.ro = new ResizeObserver(() => this.measure());
     this.ro.observe(this.$wrap);
   }
@@ -572,6 +574,10 @@ export class HighlighterCalendar extends HTMLElement {
     if (!this.isConnected || this.ptr) return;
     const box = this.$wrap.getBoundingClientRect();
     if (box.width === 0) return;
+    // 正在被 3D 翻转（翻页中的纸）：量出来的是投影，不能用，等摆平了再量
+    const c0 = this.cells[0].getBoundingClientRect();
+    const c1 = this.cells[1].getBoundingClientRect();
+    if (c1.left < c0.left || Math.abs(box.width - this.$wrap.offsetWidth) > 1) return;
     const dpr = window.devicePixelRatio || 1;
     const resized = box.width !== this.size.w || box.height !== this.size.h || dpr !== this.size.dpr;
     if (resized) {

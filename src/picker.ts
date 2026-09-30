@@ -1,5 +1,5 @@
 import type { CalendarChangeDetail } from './calendar';
-import type { HighlighterDeck } from './deck';
+import type { HighlighterBook } from './book';
 import type { Tool } from './engine';
 
 /** 先加速再减速，和卡片流用同一条曲线。 */
@@ -171,7 +171,7 @@ export class HighlighterPicker extends HTMLElement {
   private $next: HTMLButtonElement;
   private $clear: HTMLButtonElement;
   private $panel: HTMLElement;
-  private deck: HighlighterDeck;
+  private deck: HighlighterBook;
 
   private locale: string | undefined;
   private customLabel: string | null = null;
@@ -205,7 +205,7 @@ export class HighlighterPicker extends HTMLElement {
         </div>
       </div>
       <div class="panel" part="panel" role="dialog">
-        <highlighter-deck></highlighter-deck>
+        <highlighter-book></highlighter-book>
       </div>`;
     const q = <T extends Element>(s: string) => root.querySelector(s) as T;
     this.$pill = q('.pill');
@@ -217,7 +217,7 @@ export class HighlighterPicker extends HTMLElement {
     this.$next = q('.next');
     this.$clear = q('.clear');
     this.$panel = q('.panel');
-    this.deck = q('highlighter-deck');
+    this.deck = q('highlighter-book');
 
     this.deck.addEventListener('input', () => this.render());
     this.deck.addEventListener('change', () => this.render());
@@ -392,7 +392,7 @@ export class HighlighterPicker extends HTMLElement {
     const host = this.getBoundingClientRect();
     const pill = this.$pill.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
-    const want = this.deckWidth() + 80;
+    const want = this.deckWidth() + 40;
     const w = Math.min(want, vw - 16);
     this.$panel.style.width = `${w}px`;
     const center = pill.left + pill.width / 2;
@@ -407,7 +407,8 @@ export class HighlighterPicker extends HTMLElement {
       ? parseFloat(getComputedStyle(document.documentElement).fontSize)
       : 1;
     const gap = parseFloat(cs.getPropertyValue('--deck-gap')) || 20;
-    return 2 * card * unit + gap;
+    // 两页纸（各带页边距）加上两侧给书签留的位置
+    return 2 * (card * unit + 36) + 80 + gap * 0;
   }
 
   /** 面板收成窄框大小时的裁切和位移：刚好盖在窄框上。 */
@@ -458,7 +459,7 @@ export class HighlighterPicker extends HTMLElement {
   /** 按当前选择刷新窄框：没选时写今天，选了一段写那一段，好几段就变成滚轮。 */
   private render(): void {
     this.$label.textContent = this.labelText();
-    const ranges = toRanges(this.deck.value);
+    const ranges = toRanges(this.deck.value ?? []);
     const changed = ranges.map((r) => r.start + r.end).join() !== this.ranges.map((r) => r.start + r.end).join();
     this.ranges = ranges;
     const n = ranges.length;

@@ -1,8 +1,10 @@
 import { HighlighterCalendar } from './calendar';
+import { HighlighterBook } from './book';
 import { HighlighterDeck } from './deck';
 import { HighlighterPicker } from './picker';
 
 export { HighlighterCalendar, dateKey, type CalendarChangeDetail } from './calendar';
+export { HighlighterBook } from './book';
 export { HighlighterDeck } from './deck';
 export { HighlighterPicker, toRanges } from './picker';
 export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowLayout, type DayRect } from './engine';
@@ -22,6 +24,11 @@ defineHighlighterCalendar();
 
 if (typeof customElements !== 'undefined' && !customElements.get('highlighter-deck')) {
   customElements.define('highlighter-deck', HighlighterDeck);
+}
+
+// 日期框里用到书，要先注册书
+if (typeof customElements !== 'undefined' && !customElements.get('highlighter-book')) {
+  customElements.define('highlighter-book', HighlighterBook);
 }
 
 if (typeof customElements !== 'undefined' && !customElements.get('highlighter-picker')) {
