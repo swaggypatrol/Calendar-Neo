@@ -193,6 +193,9 @@ const PEN_OUT = Math.round(PITCH * PHI);
 const ERASER_OUT = Math.round(PITCH * PHI) - 4;
 const TOOL_GAP = 6;
 const SLIDE = Math.round(PITCH / PHI);
+/** How far beside the pen (the one in use casts the longest) and the wire their shadows fall on the paper. */
+const TOOL_SHADOW = 6;
+const WIRE_SHADOW = 3.5;
 /** Room above and below the pages for what sticks out of the coil (and its shadow), and either side for the bookmarks. */
 const ROOM_TOP = PEN_OUT + SLIDE + 6;
 const ROOM_BOTTOM = ERASER_OUT + SLIDE + 8;
@@ -282,7 +285,8 @@ const STYLE = /* css */ `
 }
 .shape-l { border-radius: 10px 2px 2px 10px; padding-right: ${MARGIN_INNER}px; }
 .shape-r { border-radius: 2px 10px 10px 2px; padding-left: ${MARGIN_INNER}px; }
-.page { transition: box-shadow 0.45s; }
+/* Above the bookmark tabs: a tab sticks out from under the sheets lying on top of its own */
+.page { z-index: 1; transition: box-shadow 0.45s; }
 .page.left { box-shadow: var(--edges-left, none), -6px 14px 28px -10px var(--hb-shadow); }
 .page.right { box-shadow: var(--edges-right, none), 6px 14px 28px -10px var(--hb-shadow); }
 /* The page underneath a turning (or resting, peeled) sheet: only its exposed corner shows, and grabbing it pulls the sheet */
@@ -486,11 +490,12 @@ highlighter-calendar {
 .corner[disabled] { pointer-events: none; }
 .corner:focus { outline: none; }
 .corner:focus-visible { outline: 2px solid color-mix(in srgb, var(--hb-ink) 70%, transparent); outline-offset: -10px; border-radius: 14px; }
-/* Bookmarks: one per month, always the same element. When its page isn't open it sticks out from the fore-edge; when
-   its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
+/* Bookmarks: one per month, always the same element. When its page isn't open it is a tab sticking out from the fore-edge,
+   from under the sheets lying on top of its own; when its page is open it slides into the page and becomes a swallowtail
+   ribbon lying on it, hanging from the top (under any sheet turning over it). Every change is animated; nothing jumps */
 .mark {
   position: absolute;
-  z-index: 8;
+  z-index: 0;
   box-sizing: border-box;
   border: 0;
   padding: 0;
@@ -506,12 +511,15 @@ highlighter-calendar {
     padding 0.6s var(--hb-ease), border-radius 0.6s var(--hb-ease), clip-path 0.6s var(--hb-ease),
     box-shadow 0.6s, opacity 0.35s, translate 0.15s;
 }
-.mark.ribbon { cursor: default; box-shadow: none; }
+/* A ribbon lies on its open page, even while that sheet's corner is peeled back at rest, and under any part of a sheet
+   that folds over it */
+.mark.ribbon { z-index: 5; cursor: default; box-shadow: none; }
 .mark.edge-r:hover { translate: 3px 0; }
 .mark.edge-l:hover { translate: -3px 0; }
 .mark.gone { opacity: 0; pointer-events: none; }
-/* Out of sight while a page turns: its sheet is turning over or about to be covered. It comes back where it belongs once the page lies flat */
-.mark.away { opacity: 0; pointer-events: none; }
+/* Gone with its sheet while that sheet turns over (or while pages riffle past): it comes back where it belongs once the
+   page lies flat */
+.mark.away { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
 `;
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max', 'theme'];
@@ -1670,18 +1678,30 @@ export class HighlighterBook extends HTMLElement {
     const wire = (x: number) => (Math.abs(x) >= COIL / 2 ? -1 : 20 * Math.sqrt(1 - ((2 * x) / COIL) ** 2));
     const tool = (x: number) => (Math.abs(x) >= PEN_D / 2 ? -1 : 7 + Math.sqrt((PEN_D / 2) ** 2 - x * x));
     // The outline of where a thing stands higher than the paper over it (height z(x, y) on the screen), between y0 and
-    // y1, in the spine's coordinates (shifted down by dy for an element that starts lower): one shape per stretch
-    const outline = (h: (x: number) => number, z: (x: number, y: number) => number, y0: number, y1: number, dy: number, flat = false): string => {
+    // y1, in the spine's coordinates (shifted down by dy for an element that starts lower): one shape per stretch. Beside
+    // the thing (half `body` across), within `reach` of it, lies the shadow it casts on the paper, which shows wherever the
+    // paper is lower than the nearest part of it: a sheet lying under the coil still has the pen's and the wire's shadows on it
+    const outline = (
+      h: (x: number) => number,
+      z: (x: number, y: number) => number,
+      y0: number,
+      y1: number,
+      dy: number,
+      flat = false,
+      body = 0,
+      reach = 0,
+    ): string => {
       const steps = flat ? 1 : Math.max(2, Math.ceil((y1 - y0) / 4));
       const half = (y1 - y0) / steps / 2;
       const runs: { l: Pt[]; r: Pt[] }[] = [];
       let run: { l: Pt[]; r: Pt[] } | null = null;
+      const top = (x: number) => (Math.abs(x) < body ? h(x) : h(x > 0 ? Math.max(0, x - reach) : Math.min(0, x + reach)));
       for (let i = 0; i <= steps; i++) {
         const y = y0 + ((y1 - y0) * i) / steps;
         let lo = Infinity;
         let hi = -Infinity;
         for (let x = -28; x <= 28; x += 0.5) {
-          if (h(x) > z(x, y)) {
+          if (top(x) > z(x, y)) {
             if (x < lo) lo = x;
             if (x > hi) hi = x;
           }
@@ -1713,8 +1733,8 @@ export class HighlighterBook extends HTMLElement {
     if (Math.abs(ca) > 1e-3 && nearSpine(innerPoly)) {
       const zIn = (x: number) => b.innerZ({ x: (x - inner[4]) / ca, y: 0 });
       this.$overA.style.clipPath = polyCss(innerPoly.map(toSpine));
-      this.$overACoil.style.clipPath = outline(wire, zIn, 0, H, 0, true);
-      this.$overATools.style.clipPath = outline(tool, zIn, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP, true);
+      this.$overACoil.style.clipPath = outline(wire, zIn, 0, H, 0, true, COIL / 2, WIRE_SHADOW);
+      this.$overATools.style.clipPath = outline(tool, zIn, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP, true, PEN_D / 2, TOOL_SHADOW);
     } else this.$overA.style.clipPath = polyCss([]);
     // Over the outer part (tilted a little along a slanting bend: worked out slice by slice)
     const outerPoly = fold.map((q) => ap(outer, q));
@@ -1722,8 +1742,8 @@ export class HighlighterBook extends HTMLElement {
       const back = inv(outer);
       const zOut = (x: number, y: number) => b.outerZ(ap(back, { x, y }));
       this.$overB.style.clipPath = polyCss(outerPoly.map(toSpine));
-      this.$overBCoil.style.clipPath = outline(wire, zOut, 0, H, 0);
-      this.$overBTools.style.clipPath = outline(tool, zOut, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP);
+      this.$overBCoil.style.clipPath = outline(wire, zOut, 0, H, 0, false, COIL / 2, WIRE_SHADOW);
+      this.$overBTools.style.clipPath = outline(tool, zOut, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP, false, PEN_D / 2, TOOL_SHADOW);
     } else this.$overB.style.clipPath = polyCss([]);
 
     // Shading along the bend, and the shadows the lifted sheet casts
@@ -1817,12 +1837,18 @@ export class HighlighterBook extends HTMLElement {
   }
 
   /**
-   * Bookmarks: one for each month with selected days, showing how many days are selected (1 to 5+). With m on the left page:
-   * months on the two open pages get a ribbon tucked into the page, months already turned sit on the left fore-edge, months not yet reached on the right.
+   * Bookmarks: one for each month with selected days, showing how many days are selected (1 to 5+). With m on the left page,
+   * months on the two open pages get a ribbon lying on the page, hanging from its top edge; every other month's sheet lies
+   * somewhere in the stack, so its tab sticks out from the fore-edge (left: months already turned, right: months still to
+   * come), from under the sheets on top of it.
    *
-   * turning: a page has started turning towards a spread with m on the left. Bookmarks whose sheet turns over, or gets
-   * covered, fade out now and reappear in their new places when the page lies flat (the next call without turning); a
-   * bookmark of a page being uncovered stays put and then slides into it. Nothing ever moves across a turning page.
+   * A bookmark belongs to its sheet. When a page starts turning towards a spread with m on the left (turning), the bookmarks
+   * on the sheet being turned go with it (they fade as it lifts) and everything else stays where it is, the sheet passing
+   * over it. When the page lies flat (or the turn is called off) everything goes to its new place: a tab slides out from
+   * under the sheet it is tucked under; a ribbon on a page that has just been covered is tucked under the sheet that landed
+   * on it, and its tab slides out at the fore-edge; a tab whose page has just been uncovered slides into it and becomes its
+   * ribbon; and the ribbon of a page that has just landed unrolls from its top edge. While pages riffle past, whatever would
+   * change waits out of sight for the last one to land.
    */
   private renderTabs(m = this.m, instant = false, turning = false): void {
     const counts = new Map<number, number>();
@@ -1843,6 +1869,11 @@ export class HighlighterBook extends HTMLElement {
     const top0 = PAD_TOP + H / PHI ** 4;
     const span = H - H / PHI ** 4 - H / PHI ** 3 - t;
     const placed: { right: boolean; top: number; level: number }[] = [];
+    // The sheet starting to turn: the open page it lifts from and the page on its back
+    const dir = Math.sign(m - this.m);
+    const carried = (k: number) => (dir > 0 ? k === this.m + 1 || k === this.m + 2 : k === this.m || k === this.m - 1);
+    // More pages still to turn after this one lands
+    const riffling = !turning && !instant && this.queue.length > 0;
     for (const [k, n] of [...counts].sort((a, b) => a[0] - b[0])) {
       let el = this.marks.get(k);
       const fresh = !el;
@@ -1898,38 +1929,65 @@ export class HighlighterBook extends HTMLElement {
           right,
         };
       }
-      if (turning && !fresh) {
-        const same = st.left === g.left && st.top === g.top && st.width === g.width;
-        // A tab on the fore-edge whose page is being uncovered (on the same side) slides into it once it lies flat
-        const uncovered = ribbon && !el.classList.contains('ribbon') && el.classList.contains(g.right ? 'edge-r' : 'edge-l');
-        if (!same && !uncovered) el.classList.add('away');
+      if (turning) {
+        // It goes with the sheet that is lifting; anything else stays put while the sheet is in the air
+        if (!fresh && carried(k)) el.classList.add('away');
         continue;
       }
-      // Back after a turn: put it in its new place unseen, then fade it in
-      const back = el.classList.contains('away');
-      if (fresh || instant || back) st.transition = 'none';
-      st.left = g.left;
-      st.top = g.top;
-      st.width = g.width;
-      st.height = g.height;
-      st.padding = g.padding;
-      st.borderRadius = g.radius;
-      st.clipPath = g.clip;
-      el.classList.toggle('ribbon', ribbon);
-      el.classList.toggle('edge-r', !ribbon && g.right);
-      el.classList.toggle('edge-l', !ribbon && !g.right);
-      el.tabIndex = ribbon ? -1 : 0;
-      if (back) {
-        void el.offsetWidth;
-        st.transition = '';
+      const was = el.classList.contains('ribbon') ? 'ribbon' : el.classList.contains('edge-r') ? 'r' : el.classList.contains('edge-l') ? 'l' : '';
+      const now = ribbon ? 'ribbon' : g.right ? 'r' : 'l';
+      // (Compared as numbers: the style reads back "161px" for "161.0px")
+      const near = (a: string, b: string) => Math.abs(parseFloat(a) - parseFloat(b)) < 0.05;
+      const moved = !near(st.left, g.left) || !near(st.top, g.top) || !near(st.width, g.width) || !near(st.height, g.height);
+      if (riffling) {
+        // Covered, uncovered or moved on by a page that has just landed, with more to come: out of sight until the last
+        if (moved || was !== now) {
+          st.transition = 'none';
+          el.classList.add('away');
+          void el.offsetWidth;
+          st.transition = '';
+        }
+        continue;
+      }
+      const hidden = fresh || el.classList.contains('away') || el.classList.contains('gone');
+      const place = (left: string, clip: string) => {
+        st.left = left;
+        st.top = g.top;
+        st.width = g.width;
+        st.height = g.height;
+        st.padding = g.padding;
+        st.borderRadius = g.radius;
+        st.clipPath = clip;
+        el!.classList.toggle('ribbon', ribbon);
+        el!.classList.toggle('edge-r', !ribbon && g.right);
+        el!.classList.toggle('edge-l', !ribbon && !g.right);
+        el!.tabIndex = ribbon ? -1 : 0;
+      };
+      if (instant) {
+        // The whole book jumped to another month: put it in place, fading in if it is new
+        st.transition = 'none';
+        place(g.left, g.clip);
         el.classList.remove('away');
-      }
-      if (fresh || instant) {
-        // A new bookmark (or the whole book jumped to another month): place it first, then fade it in
         void el.offsetWidth;
         st.transition = '';
-        requestAnimationFrame(() => el!.classList.remove('gone'));
+        if (hidden) requestAnimationFrame(() => el!.classList.remove('gone'));
+        continue;
       }
+      if (hidden || (was === 'ribbon' && !ribbon) || (was !== 'ribbon' && !ribbon && was !== now)) {
+        // Coming in where it now belongs. A tab starts tucked under the sheet over it and slides out from under its edge (a
+        // ribbon just covered by the sheet that landed on its page is under that sheet already); a ribbon unrolls from the
+        // top of its page
+        st.transition = 'none';
+        if (ribbon) place(g.left, `polygon(0 0, 100% 0, 100% 0, 50% 0, 0 0)`);
+        else place(`${(g.right ? PAD_X + spreadW - tabW - 2 : PAD_X + 2).toFixed(1)}px`, g.clip);
+        el.classList.remove('away', 'gone');
+        void el.offsetWidth;
+        st.transition = '';
+        place(g.left, g.clip);
+        continue;
+      }
+      // A tab whose page has just been uncovered slides into it and becomes its ribbon; a tab moving along its fore-edge slides
+      if (moved || was !== now) place(g.left, g.clip);
     }
     // This month's selection was cleared: remove the bookmark after it fades out
     for (const [k, el] of this.marks) {
