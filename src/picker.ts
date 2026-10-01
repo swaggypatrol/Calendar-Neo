@@ -150,7 +150,7 @@ const STYLE = /* css */ `
   left: 0;
   z-index: 50;
   box-sizing: border-box;
-  padding: 28px 40px 0;
+  padding: 8px 40px 0;
   border-radius: 32px;
   /* No card behind the calendar: the book floats over the page with only its own shadow */
   background: transparent;
@@ -404,23 +404,13 @@ export class HighlighterPicker extends HTMLElement {
     const host = this.getBoundingClientRect();
     const pill = this.$pill.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
-    const want = this.deckWidth() + 40;
+    // The book plus the panel's own side padding, so the book sits centred under the field
+    const want = this.deck.naturalWidth + 80;
     const w = Math.min(want, vw - 16);
     this.$panel.style.width = `${w}px`;
     const center = pill.left + pill.width / 2;
     const left = Math.max(8, Math.min(vw - 8 - w, center - w / 2));
     this.$panel.style.left = `${left - host.left}px`;
-  }
-
-  private deckWidth(): number {
-    const cs = getComputedStyle(this.deck);
-    const card = parseFloat(cs.getPropertyValue('--hc-card-width')) || 22;
-    const unit = cs.getPropertyValue('--hc-card-width').trim().endsWith('rem')
-      ? parseFloat(getComputedStyle(document.documentElement).fontSize)
-      : 1;
-    const gap = parseFloat(cs.getPropertyValue('--deck-gap')) || 20;
-    // Two pages (each with margins) plus room on both sides for bookmarks
-    return 2 * (card * unit + 36) + 80 + gap * 0;
   }
 
   /** Clip and offset for the panel collapsed to the narrow field's size: exactly covering the field. */

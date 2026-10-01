@@ -13,14 +13,14 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 | Element | What it is |
 | --- | --- |
 | `<highlighter-calendar>` | One month you can paint on. The core of everything else. |
-| `<highlighter-book>` | An open paper calendar: two months side by side, pages printed on both sides, turned with a soft page curl. |
+| `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side, pages printed on both sides, turned with a soft page curl, with a highlighter and an eraser tucked into the coil. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
 
 ## How painting works
 
 - **Swipe with the left button or a finger** to highlight. Behind every date is an 8×8 grid of cells; once enough of them are painted (`threshold`, default 35 of 64) the date is selected.
-- **Swipe with the right button** (or a pen's eraser end) to erase, which is the same logic in reverse. On touch screens, set `tool="erase"`.
+- **Swipe with the right button** (or a pen's eraser end) to erase, which is the same logic in reverse. On touch screens, pick up the eraser from the book's coil, or set `tool="erase"`.
 - **Hold still** and the ink soaks in and darkens under the pen. Hold long enough and the day gets a stroke drawn across it. Pressing between two numbers bleeds halfway into the neighbour first, and keeps going only if you keep holding. Bleeding never crosses into the row above or below.
 - **Go back and forth** over the same spot and the colour builds up, to a limit.
 - **Paint anywhere** in a cell while drawing. When you lift the pen, the strokes glide into a tidy band centred on the date numbers (0.618 of the cell height), with a clean pass laid underneath, so the result looks consistent.
@@ -30,8 +30,10 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 ## The paper calendar: `<highlighter-book>`
 
 - Two months are always open, one per page. Each sheet is printed on both sides, like a real book.
+- **Spiral binding.** Every sheet is punched down its inner edge and hangs on a metal coil in the middle of the book, and every turn swings round that coil. A highlighter is pushed into the coil from the top and an eraser from the bottom. Tap one to pick it up: it slides a little further out of the coil and becomes what the left button or a finger does, and the book fires `toolchange`. Both are 1/φ² as thick as the coil, so the strip of paper inside the holes slips past them as a sheet turns: they never get in its way.
 - **Turn pages** by dragging on any blank area (outside the date grid), or with a two-finger sideways swipe on a trackpad: drag left and the right page peels up from its corner and follows your finger; drag right to turn back. Drag past about a third, or flick, and it turns; otherwise it settles back. Either way the page carries on with the speed you gave it, slows down naturally and lands exactly flat, with no bounce, pause or snap, and a page that is still moving can be caught again. Swipe quickly several times and it riffles through pages. The right page's bottom corner rests slightly peeled back and gently breathing; it is the real sheet, so clicking or pulling it (or its folded-over flap) continues the same curl into a full turn.
-- **Bookmarks** replace any kind of glow. Every month with selected days gets a bookmark tab on the fore-edge, placed at a height that depends on the month, showing how many days you picked there (1 to 5+). Months you have already turned past sit on the left, months ahead sit on the right. Click a tab to turn straight to that month, and the tab slides into the page as a hanging ribbon.
+- **Bookmarks** replace any kind of glow. Every month with selected days gets a bookmark tab on the fore-edge, showing how many days you picked there (1 to 5+). Months you have already turned past sit on the left, months ahead sit on the right. Click a tab to turn straight to that month, and the tab slides into the page as a hanging ribbon. When its sheet turns over, a bookmark fades out and comes back on the other side instead of sliding across the open pages.
+- **Golden proportions** throughout. Page margins are 1 : φ (outer edge : binding side). In the day grid the numbers are 1/φ² of a cell's height, the month title is φ times the numbers and the highlight band is 1/φ of a cell. The coil's hole spacing, hole size and inset are all related by φ, and the highlighter and eraser meet at the golden section of the spine. A tab is t × tφ, a ribbon t × tφ², and each month's tab sits frac(n·φ) of the way down the fore-edge: the golden-ratio sequence, which keeps any handful of bookmarks evenly spread.
 - Past months are printed with a soft vignette.
 - Everything animates. Nothing jumps.
 
@@ -81,7 +83,7 @@ All components share these attributes:
 | `min`, `max` | Selectable range (see above) |
 | `theme` | `light` or `dark` to override the system colour scheme; leave it out to follow the system |
 
-Events: `input` (fires as each day is selected or cleared while drawing) and `change` (after you lift the pen, if anything changed), both with `detail: { value, added, removed }`; `monthchange` when the visible month changes.
+Events: `input` (fires as each day is selected or cleared while drawing) and `change` (after you lift the pen, if anything changed), both with `detail: { value, added, removed }`; `monthchange` when the visible month changes; `toolchange` (book and picker, `detail: { tool }`) when the highlighter or the eraser is picked up from the coil.
 
 Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the picker `open()` / `close()`.
 
@@ -100,7 +102,7 @@ npm run build        # library build into dist/
 - `src/engine.ts`: selection logic (8×8 cells, threshold, hold-to-bleed, eraser). No DOM, unit tested.
 - `src/ink.ts`: the highlighter look (bristles, streaks, layering, fading, settling into the band, auto-completed strokes).
 - `src/calendar.ts`: the `<highlighter-calendar>` element, wiring the two to pointer, keyboard and the month grid.
-- `src/book.ts`: the paper calendar (two pages, page curl, bookmarks).
+- `src/book.ts`: the paper calendar (two pages, spiral binding with the highlighter and eraser, page curl, bookmarks).
 - `src/picker.ts`: the booking field (pill, grow animation, range wheel).
 - `src/deck.ts`: the card-stack layout.
 - `src/range.ts`: `min` / `max` handling.

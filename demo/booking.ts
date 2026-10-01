@@ -17,6 +17,11 @@ function pick(groupId: string, attr: string, apply: (v: string) => void) {
 pick('min', 'min', (v) => cal.setAttribute('min', v));
 pick('max', 'max', (v) => (v ? cal.setAttribute('max', v) : cal.removeAttribute('max')));
 pick('tool', 'tool', (v) => (cal.tool = v as 'highlight' | 'erase'));
+// Picking up the highlighter or the eraser from the calendar's coil switches the tool too: keep these buttons in step
+cal.addEventListener('toolchange', (e) => {
+  const tool = (e as CustomEvent<{ tool: string }>).detail.tool;
+  $('tool').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
+});
 pick('colors', 'color', (v) => (cal.color = v));
 $('clear').addEventListener('click', () => cal.clear());
 

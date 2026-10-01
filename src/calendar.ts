@@ -32,13 +32,17 @@ const DEFAULT_INK = '#ffd21f';
 
 const STYLE = /* css */ `
 :host {
+  /* Golden proportions, all from the size of the day numbers: a cell is φ² of it tall (so the number is 1/φ² of the cell
+     and the highlight band, 1/φ of the cell, is exactly φ times the number), the month title is φ times it, weekday
+     letters 1/√φ of it, corners and spacing 1/φ of it */
+  --hc-num: 0.875rem;
   --hc-ink: ${DEFAULT_INK};
   --hc-bg: #ffffff;
   --hc-fg: #1d2127;
   --hc-muted: #8a9099;
   --hc-line: rgba(20, 30, 50, 0.07);
   --hc-accent: #e8590c;
-  --hc-radius: 10px;
+  --hc-radius: calc(var(--hc-num) * 0.618);
   --hc-gap: 4px;
   display: inline-block;
   width: 22rem;
@@ -77,9 +81,9 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 2px 10px;
+  margin: 0 2px calc(var(--hc-num) * 0.618);
 }
-.title { font-weight: 650; font-size: 1.02rem; }
+.title { font-weight: 650; font-size: calc(var(--hc-num) * 1.618); letter-spacing: -0.01em; }
 .nav {
   appearance: none;
   border: 0;
@@ -109,7 +113,7 @@ header {
   gap: var(--hc-gap);
   margin-bottom: 4px;
 }
-.weekdays span { text-align: center; font-size: 0.72rem; color: var(--hc-muted); }
+.weekdays span { text-align: center; font-size: calc(var(--hc-num) / 1.272); color: var(--hc-muted); }
 .wrap {
   position: relative;
   margin: -14px;
@@ -137,13 +141,13 @@ canvas {
 .row { display: contents; }
 .day {
   position: relative;
-  aspect-ratio: 1 / 0.84;
+  height: calc(var(--hc-num) * 2.618);
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--hc-radius);
   box-shadow: inset 0 0 0 1px var(--hc-line);
-  font-size: 0.95rem;
+  font-size: var(--hc-num);
   font-variant-numeric: tabular-nums;
   outline: none;
 }
@@ -159,7 +163,7 @@ canvas {
   content: '';
   position: absolute;
   left: 50%;
-  bottom: 12%;
+  bottom: 14.6%;
   width: 4px;
   height: 4px;
   margin-left: -2px;

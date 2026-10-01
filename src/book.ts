@@ -81,6 +81,78 @@ const parseKey = (s: string): number | null => {
   return m ? monthIndex(Number(m[1]), Math.min(11, Math.max(0, Number(m[2]) - 1))) : null;
 };
 
+/** The golden ratio: the page margins, the binding, the pen and eraser and the bookmarks are all laid out with it. */
+const PHI = (1 + Math.sqrt(5)) / 2;
+
+/** Page margins: m on the outer edge and at the top, m·φ on the binding side (room for the punched holes), m/φ at the bottom. */
+const MARGIN = 16;
+const MARGIN_INNER = Math.round(MARGIN * PHI);
+const MARGIN_BOTTOM = Math.round(MARGIN / PHI);
+
+/**
+ * The spiral binding. Holes are punched every PITCH px down the inner edge of every sheet; a hole is PITCH/φ² across and
+ * its centre sits PITCH/φ in from the edge. The two pages lie PITCH/φ apart and the coil runs through both rows of holes.
+ */
+const PITCH = 17;
+const HOLE_R = PITCH / PHI ** 2 / 2;
+const HOLE_INSET = PITCH / PHI;
+const SPINE = Math.round(PITCH / PHI);
+/** Half the gap: a sheet's inner edge sits this far from the coil's axis, which the sheets turn about. */
+const HALF = SPINE / 2;
+/** Across the coil, hole to hole. */
+const COIL = 2 * (HALF + HOLE_INSET);
+
+/**
+ * The highlighter is pushed into the coil from the top and the eraser from the bottom, meeting at the golden section of
+ * the spine. Both are 1/φ² of the coil across, so the strip of paper inside the holes (PITCH/φ wide) still clears them
+ * as a sheet swings round the wire: they never get in the way of a turning page. The tool in use is drawn PITCH/φ further out.
+ */
+const PEN_D = Math.round(COIL / PHI ** 2);
+const ERASER_D = PEN_D - 1;
+const PEN_OUT = Math.round(PITCH * PHI);
+const ERASER_OUT = Math.round(PITCH * PHI) - 4;
+const TOOL_GAP = 6;
+const SLIDE = Math.round(PITCH / PHI);
+/** Room above and below the pages for what sticks out of the coil (and its shadow), and either side for the bookmarks. */
+const ROOM_TOP = PEN_OUT + SLIDE + 6;
+const ROOM_BOTTOM = ERASER_OUT + SLIDE + 8;
+const PAD_X = 40;
+const PAD_TOP = ROOM_TOP + 4;
+const PAD_BOTTOM = Math.max(30, ROOM_BOTTOM + 2);
+
+/** One turn of the coil seen from above: a wire rising out of a hole on the left page, over the pen, into the right page. */
+const coilTile = (c: { dark: string; mid: string; light: string; glint: number; shadow: number }) => {
+  const l = 22 - COIL / 2;
+  const r = 22 + COIL / 2;
+  const y = PITCH / 2;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 ${PITCH}" preserveAspectRatio="none">` +
+    `<defs><linearGradient id="m" x1="0" x2="1"><stop offset="0" stop-color="${c.dark}"/><stop offset=".28" stop-color="${c.mid}"/>` +
+    `<stop offset=".5" stop-color="${c.light}"/><stop offset=".74" stop-color="${c.mid}"/><stop offset="1" stop-color="${c.dark}"/></linearGradient>` +
+    `<linearGradient id="g" x1="0" x2="1"><stop offset=".22" stop-color="#fff" stop-opacity="0"/>` +
+    `<stop offset=".47" stop-color="#fff" stop-opacity="${c.glint}"/><stop offset=".78" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
+    `<filter id="b" x="-20%" y="-80%" width="140%" height="260%"><feGaussianBlur stdDeviation="1"/></filter></defs>` +
+    // its shadow on the paper (and on the pen), then the wire, then a glint along its top
+    `<path d="M${l + 1} ${y + 3.4}Q22 ${y - 2.6} ${r + 1} ${y + 1.2}" fill="none" stroke="#000" stroke-opacity="${c.shadow}" stroke-width="2.4" stroke-linecap="round" filter="url(#b)"/>` +
+    `<path d="M${l} ${y + 1.1}Q22 ${y - 5} ${r} ${y - 1.1}" fill="none" stroke="url(#m)" stroke-width="2.4" stroke-linecap="round"/>` +
+    `<path d="M${l + 2} ${y + 0.2}Q22 ${y - 5.7} ${r - 2} ${y - 1.9}" fill="none" stroke="url(#g)" stroke-width=".8" stroke-linecap="round"/>` +
+    `</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+};
+const COIL_LIGHT = coilTile({ dark: '#767c84', mid: '#c3c8ce', light: '#f1f3f5', glint: 0.9, shadow: 0.3 });
+const COIL_DARK = coilTile({ dark: '#3f444b', mid: '#7f868e', light: '#c9ced4', glint: 0.55, shadow: 0.55 });
+
+const DARK_VARS = /* css */ `
+    --hb-paper: #2f3238;
+    --hb-paper-edge: #45484f;
+    --hb-line: rgba(255, 255, 255, 0.07);
+    --hb-shadow: rgba(0, 0, 0, 0.45);
+    --hb-hole: rgba(8, 9, 11, 0.78);
+    --hb-hole-rim: rgba(0, 0, 0, 0.35);
+    --hb-hollow: rgba(0, 0, 0, 0.42);
+    --hb-coil: ${COIL_DARK};
+    --hb-tool-light: 0.84;`;
+
 const STYLE = /* css */ `
 :host {
   --hb-paper: #fbf8f2;
@@ -88,30 +160,27 @@ const STYLE = /* css */ `
   --hb-line: rgba(60, 45, 25, 0.07);
   --hb-shadow: rgba(40, 30, 15, 0.18);
   --hb-ink: #ffd21f;
+  --hb-hole: rgba(58, 44, 26, 0.62);
+  --hb-hole-rim: rgba(58, 44, 26, 0.22);
+  --hb-hollow: rgba(60, 45, 25, 0.2);
+  --hb-coil: ${COIL_LIGHT};
+  --hb-pitch: ${PITCH}px;
   --hc-card-width: 22rem;
   --hb-ease: cubic-bezier(0.65, 0, 0.35, 1);
   display: block;
 }
 /* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
 @media (prefers-color-scheme: dark) {
-  :host(:not([theme="light"])) {
-    --hb-paper: #2f3238;
-    --hb-paper-edge: #45484f;
-    --hb-line: rgba(255, 255, 255, 0.07);
-    --hb-shadow: rgba(0, 0, 0, 0.45);
+  :host(:not([theme="light"])) {${DARK_VARS}
   }
 }
-:host([theme="dark"]) {
-  --hb-paper: #2f3238;
-  --hb-paper-edge: #45484f;
-  --hb-line: rgba(255, 255, 255, 0.07);
-  --hb-shadow: rgba(0, 0, 0, 0.45);
+:host([theme="dark"]) {${DARK_VARS}
 }
 .book {
   position: relative;
   width: max-content;
   margin: 0 auto;
-  padding: 10px 40px 30px;
+  padding: ${PAD_TOP}px ${PAD_X}px ${PAD_BOTTOM}px;
   touch-action: pan-y;
   overscroll-behavior: contain;
   user-select: none;
@@ -121,32 +190,43 @@ const STYLE = /* css */ `
   position: relative;
   display: grid;
   grid-template-columns: auto auto;
+  column-gap: ${SPINE}px;
 }
 .page, .turn {
   position: relative;
   box-sizing: border-box;
-  padding: 16px 18px 14px;
+  padding: ${MARGIN}px ${MARGIN}px ${MARGIN_BOTTOM}px;
   background:
     radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(120, 90, 40, 0.05)),
     var(--hb-paper);
 }
-.shape-l { border-radius: 10px 2px 2px 10px; }
-.shape-r { border-radius: 2px 10px 10px 2px; }
+.shape-l { border-radius: 10px 2px 2px 10px; padding-right: ${MARGIN_INNER}px; }
+.shape-r { border-radius: 2px 10px 10px 2px; padding-left: ${MARGIN_INNER}px; }
 .page { transition: box-shadow 0.45s; }
 .page.left { box-shadow: var(--edges-left, none), -6px 14px 28px -10px var(--hb-shadow); }
 .page.right { box-shadow: var(--edges-right, none), 6px 14px 28px -10px var(--hb-shadow); }
 /* The page underneath a turning (or resting, peeled) sheet: only its exposed corner shows, and grabbing it pulls the sheet */
 .page.under { cursor: grab; }
 .page.under highlighter-calendar { pointer-events: none; }
-/* Gutter: the shadow near the binding */
+/* The binding edge of every sheet: a column of punched holes (you look down through the stack, so they are dark), and only a
+   faint shade, because spiral-bound pages lie flat. Part of the sheet, so the holes turn with it */
 .gutter {
   position: absolute;
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
+  --hole: radial-gradient(circle at ${HOLE_INSET}px 50%, var(--hb-hole) 0 ${(HOLE_R - 0.9).toFixed(2)}px, var(--hb-hole-rim) ${(HOLE_R - 0.1).toFixed(2)}px, transparent ${(HOLE_R + 0.6).toFixed(2)}px);
 }
-.shape-l .gutter { background: linear-gradient(to left, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
-.shape-r .gutter { background: linear-gradient(to right, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.04) 5%, transparent 14%); }
+.shape-l .gutter {
+  background:
+    var(--hole) 100% 0 / ${2 * HOLE_INSET}px var(--hb-pitch) repeat-y,
+    linear-gradient(to left, rgba(0, 0, 0, 0.07), rgba(0, 0, 0, 0.02) 4%, transparent 9%);
+}
+.shape-r .gutter {
+  background:
+    var(--hole) 0 0 / ${2 * HOLE_INSET}px var(--hb-pitch) repeat-y,
+    linear-gradient(to right, rgba(0, 0, 0, 0.07), rgba(0, 0, 0, 0.02) 4%, transparent 9%);
+}
 /* Light and shade while turning: a gradient along the fold line. On the page below it is the shadow cast by the lifted sheet; on the sheet it is the shading of the curled surface */
 .fx {
   position: absolute;
@@ -194,10 +274,115 @@ highlighter-calendar {
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
 }
+/* The spine: the gap between the pages, the coil over it, and the highlighter and eraser pushed into the coil. It sits above
+   every sheet, including one that is turning: the sheets hang on the coil and swing round underneath it */
+.spine {
+  position: absolute;
+  left: 50%;
+  width: 56px;
+  margin-left: -28px;
+  top: -${ROOM_TOP}px;
+  bottom: -${ROOM_BOTTOM}px;
+  z-index: 7;
+  pointer-events: none;
+}
+.hollow {
+  position: absolute;
+  left: 50%;
+  width: ${SPINE}px;
+  margin-left: -${SPINE / 2}px;
+  top: ${ROOM_TOP}px;
+  bottom: ${ROOM_BOTTOM}px;
+  background: linear-gradient(to right, var(--hb-hollow), transparent 50%, var(--hb-hollow));
+}
+.coil {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: ${ROOM_TOP}px;
+  bottom: ${ROOM_BOTTOM}px;
+  background: var(--hb-coil) 50% 0 / 44px var(--hb-pitch) repeat-y;
+}
+.tool {
+  position: absolute;
+  left: 50%;
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  filter: brightness(var(--hb-tool-light, 1)) drop-shadow(1px 2px 1.5px rgba(0, 0, 0, 0.3));
+  transition: translate 0.55s cubic-bezier(0.22, 0.8, 0.3, 1), filter 0.55s;
+}
+.tool > span { position: absolute; left: 0; right: 0; }
+.tool:focus-visible { outline: 2px solid color-mix(in srgb, var(--hb-ink) 70%, #000); outline-offset: 3px; border-radius: 6px; }
+/* The highlighter: cap (in the ink colour, with a clip) sticking out of the top of the coil, white barrel inside it */
+.pen {
+  width: ${PEN_D}px;
+  margin-left: -${PEN_D / 2}px;
+  top: ${ROOM_TOP - PEN_OUT}px;
+  height: calc(${PEN_OUT}px + (100% - ${ROOM_TOP + ROOM_BOTTOM}px) / ${PHI} - ${TOOL_GAP / 2}px);
+}
+.pen .cap {
+  top: 0;
+  height: ${PEN_OUT + 7}px;
+  border-radius: ${PEN_D / 2}px ${PEN_D / 2}px 2px 2px;
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--hb-ink) 62%, #000), var(--hb-ink) 34%,
+    color-mix(in srgb, var(--hb-ink) 45%, #fff) 50%, var(--hb-ink) 66%, color-mix(in srgb, var(--hb-ink) 58%, #000));
+}
+.pen .clip {
+  left: ${PEN_D / 2 - 1.5}px;
+  right: auto;
+  width: 3px;
+  top: 6px;
+  height: ${PEN_OUT + 12}px;
+  border-radius: 1.5px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--hb-ink) 50%, #000), color-mix(in srgb, var(--hb-ink) 60%, #fff), color-mix(in srgb, var(--hb-ink) 50%, #000));
+  box-shadow: 0.5px 1px 1px rgba(0, 0, 0, 0.25);
+}
+.pen .barrel {
+  top: ${PEN_OUT + 7}px;
+  bottom: 0;
+  border-radius: 2px 2px ${PEN_D / 2}px ${PEN_D / 2}px;
+  background:
+    linear-gradient(var(--hb-ink), var(--hb-ink)) 0 3px / 100% 3px no-repeat,
+    linear-gradient(to right, #aaa69d, #e9e7e1 36%, #ffffff 50%, #e3e1da 66%, #a29e95);
+}
+/* The eraser: a slim holder inside the coil, the rubber sticking out of the bottom */
+.eraser {
+  width: ${ERASER_D}px;
+  margin-left: -${ERASER_D / 2}px;
+  top: calc(${ROOM_TOP}px + (100% - ${ROOM_TOP + ROOM_BOTTOM}px) / ${PHI} + ${TOOL_GAP / 2}px);
+  bottom: ${ROOM_BOTTOM - ERASER_OUT}px;
+}
+.eraser .sleeve {
+  top: 0;
+  bottom: ${ERASER_OUT + 4}px;
+  border-radius: ${ERASER_D / 2}px ${ERASER_D / 2}px 1px 1px;
+  background: linear-gradient(to right, #4f6275, #8ea2b6 36%, #b9c8d6 50%, #8a9eb2 66%, #4a5c6e);
+}
+.eraser .ferrule {
+  bottom: ${ERASER_OUT + 1}px;
+  height: 3px;
+  background: linear-gradient(to right, #80868e, #e6e9ec 50%, #7a8088);
+}
+.eraser .rubber {
+  bottom: 0;
+  height: ${ERASER_OUT + 1}px;
+  border-radius: 1px 1px ${ERASER_D / 2 - 1}px ${ERASER_D / 2 - 1}px;
+  background: linear-gradient(to right, #cf8f96, #f2c3c6 36%, #fde4e4 50%, #efbcc0 66%, #c9878f);
+}
+/* The tool in use is drawn further out of the coil and lifts off the paper; the other one sits pushed in */
+.tool:not(.on):hover { translate: 0 calc(var(--out) * 0.3); }
+.tool.on { translate: 0 var(--out); filter: brightness(var(--hb-tool-light, 1)) drop-shadow(2px 5px 4px rgba(0, 0, 0, 0.3)); }
+.pen { --out: -${SLIDE}px; }
+.eraser { --out: ${SLIDE}px; }
 /* The page corners: click (or press and pull) to turn. The right one is the real sheet, peeled back and breathing */
 .corner {
   position: absolute;
-  bottom: 30px;
+  bottom: ${PAD_BOTTOM}px;
   width: 72px;
   height: 72px;
   border: 0;
@@ -206,8 +391,8 @@ highlighter-calendar {
   cursor: pointer;
   z-index: 6;
 }
-.corner.next { right: 40px; }
-.corner.prev { left: 40px; }
+.corner.next { right: ${PAD_X}px; }
+.corner.prev { left: ${PAD_X}px; }
 .corner[disabled] { pointer-events: none; }
 /* Bookmarks: one per month, always the same element. When its page isn't open it sticks out from the fore-edge; when
    its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
@@ -233,6 +418,18 @@ highlighter-calendar {
 .mark.edge-r:hover { translate: 3px 0; }
 .mark.edge-l:hover { translate: -3px 0; }
 .mark.gone { opacity: 0; pointer-events: none; }
+/* Crossing to the other side with its sheet: out, then (while it can't be seen) straight to its new place, then back in */
+.mark.hop {
+  animation: mark-hop 0.7s ease;
+  transition:
+    left 0s 0.3s, top 0s 0.3s, width 0s 0.3s, height 0s 0.3s, padding 0s 0.3s, border-radius 0s 0.3s, clip-path 0s 0.3s,
+    box-shadow 0.6s, opacity 0.35s, translate 0.15s;
+}
+@keyframes mark-hop {
+  0% { opacity: 1; }
+  40%, 60% { opacity: 0; }
+  100% { opacity: 1; }
+}
 `;
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max', 'theme'];
@@ -314,15 +511,18 @@ interface Wheel {
 }
 
 /**
- * <highlighter-book>: an open paper calendar. Two facing pages, with a month printed on each side of every sheet,
- * so two months are always open at once; pages turn along the gutter like real paper.
+ * <highlighter-book>: an open spiral-bound paper calendar. Two facing pages, with a month printed on each side of every sheet,
+ * so two months are always open at once; every sheet is punched along its inner edge and turns round the coil like real paper.
  *
+ * - A highlighter is pushed into the coil from the top and an eraser from the bottom: tap one to pick it up (it becomes what
+ *   the left button or a finger does, and a toolchange event fires). They are thin enough that turning sheets slip past them.
+ * - Margins, the day grid, the coil, where the two tools meet and where the bookmarks sit all follow the golden ratio.
  * - The right page's bottom corner rests slightly peeled back, breathing. It is the real sheet: click it, or pull it, and
  *   the same curl carries on into a full turn.
  * - Press on blank space (outside the day cells) and drag, or swipe sideways with two fingers on a trackpad: drag left and the
  *   right page follows your finger over; drag right and the left page turns back. Let go past about a third, or with a flick,
  *   and the page carries on and settles flat; otherwise it falls back. Quick swipes in a row riffle page after page.
- * - A month with selected days sticks a bookmark out of the fore-edge (at a different height per month); click it to jump to that month.
+ * - A month with selected days sticks a bookmark out of the fore-edge; click it to jump to that month.
  * - Months already past are printed with a vignette.
  * Attributes and input / change events are the same as <highlighter-calendar>; it also has month (the left page's month) and next() / prev().
  */
@@ -340,6 +540,11 @@ export class HighlighterBook extends HTMLElement {
   private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
+  /** The highlighter and the eraser pushed into the coil: pick one up to switch tools. */
+  private $pen: HTMLButtonElement;
+  private $eraser: HTMLButtonElement;
+  /** Keeps the holes (and the coil running through them) evenly spaced down the page whatever its height. */
+  private sizer: ResizeObserver | null = null;
   /** Six pages: the two open ones, plus the two either side prepared ahead of time so a turn never has to wait for one. */
   private pages: HighlighterCalendar[] = [];
   /** The left page's month (month index = year * 12 + month). The right page is m + 1. */
@@ -378,6 +583,12 @@ export class HighlighterBook extends HTMLElement {
           <div class="page right shape-r"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="turn front"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div></div>
+          <div class="spine">
+            <div class="hollow"></div>
+            <button class="tool pen" type="button" part="pen" title="Highlighter" aria-label="Highlighter"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></button>
+            <button class="tool eraser" type="button" part="eraser" title="Eraser" aria-label="Eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></button>
+            <div class="coil"></div>
+          </div>
         </div>
         <button class="corner prev" type="button" aria-label="Previous page"></button>
         <button class="corner next" type="button" aria-label="Next page"></button>
@@ -393,6 +604,10 @@ export class HighlighterBook extends HTMLElement {
     this.$pool = q('.pool');
     this.$prev = q('.corner.prev');
     this.$next = q('.corner.next');
+    this.$pen = q('.tool.pen');
+    this.$eraser = q('.tool.eraser');
+    this.$pen.addEventListener('click', () => this.pickTool('highlight'));
+    this.$eraser.addEventListener('click', () => this.pickTool('erase'));
 
     for (let i = 0; i < 6; i++) {
       const c = document.createElement('highlighter-calendar');
@@ -424,10 +639,15 @@ export class HighlighterBook extends HTMLElement {
 
   connectedCallback(): void {
     this.layout();
+    this.syncTools();
+    this.sizer = new ResizeObserver(() => this.spaceHoles());
+    this.sizer.observe(this.$right);
     this.afterLanding(300);
   }
 
   disconnectedCallback(): void {
+    this.sizer?.disconnect();
+    this.sizer = null;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     cancelAnimationFrame(this.idleRaf);
@@ -452,6 +672,7 @@ export class HighlighterBook extends HTMLElement {
         else c.setAttribute(name, v);
       }
       if (name === 'color') this.style.setProperty('--hb-ink', v ?? '#ffd21f');
+      if (name === 'tool') this.syncTools();
       if (name === 'min' || name === 'max') {
         this.range.set(name, v);
         this.selection = this.pages[0].value;
@@ -488,6 +709,12 @@ export class HighlighterBook extends HTMLElement {
 
   set tool(t: Tool) {
     for (const c of this.pages) c.tool = t;
+    this.syncTools();
+  }
+
+  /** The book's full width, bookmarks and all (for laying out whatever holds it). */
+  get naturalWidth(): number {
+    return this.$book.offsetWidth || 2 * (this.$right.offsetWidth || 394) + SPINE + 2 * PAD_X;
   }
 
   get color(): string {
@@ -547,6 +774,32 @@ export class HighlighterBook extends HTMLElement {
   hint(): void {
     this.hintAt = performance.now();
     if (!this.flip) this.afterLanding(0);
+  }
+
+  // ---------- The highlighter and the eraser in the coil ----------
+
+  /** Picking up the highlighter or the eraser switches what the left button (or a finger) does on every page. */
+  private pickTool(t: Tool): void {
+    if (this.tool === t) return;
+    this.setAttribute('tool', t);
+    this.dispatchEvent(new CustomEvent('toolchange', { detail: { tool: t }, bubbles: true, composed: true }));
+  }
+
+  /** The tool in use is drawn a little further out of the coil, the other one pushed back in. */
+  private syncTools(): void {
+    const erase = this.tool === 'erase';
+    this.$pen.classList.toggle('on', !erase);
+    this.$eraser.classList.toggle('on', erase);
+    this.$pen.setAttribute('aria-pressed', String(!erase));
+    this.$eraser.setAttribute('aria-pressed', String(erase));
+  }
+
+  /** Space the holes evenly down the page, a whole number of them, so the coil passes through every one exactly. */
+  private spaceHoles(): void {
+    const H = this.$right.offsetHeight;
+    if (!H) return;
+    const pitch = H / Math.max(1, Math.round(H / PITCH));
+    this.$book.style.setProperty('--hb-pitch', `${pitch.toFixed(3)}px`);
   }
 
   // ---------- Pages ----------
@@ -799,7 +1052,7 @@ export class HighlighterBook extends HTMLElement {
       el.style.clipPath = '';
     }
     // The front sits where its page was; the back is laid out like the opposite page and mirrored over during the turn
-    const [fl, bl] = dir > 0 ? [W, 0] : [0, W];
+    const [fl, bl] = dir > 0 ? [W + SPINE, 0] : [0, W + SPINE];
     this.$front.style.left = `${fl}px`;
     this.$back.style.left = `${bl}px`;
     this.$front.className = `turn front ${dir > 0 ? 'shape-r' : 'shape-l'}`;
@@ -866,24 +1119,25 @@ export class HighlighterBook extends HTMLElement {
     return { W: this.$right.offsetWidth || 1, H: this.$right.offsetHeight || 1 };
   }
 
-  /** The lifted page corner (mirrored coordinates). */
+  /** The lifted page corner (mirrored coordinates: the origin is on the coil's axis, level with the top of the page). */
   private corner(f: Flip): Pt {
     const { W, H } = this.size;
-    return { x: W, y: f.top ? 0 : H };
+    return { x: HALF + W, y: f.top ? 0 : H };
   }
 
-  /** How far the page has turned, 0..1: the corner travels from home (x=W) to the other side (x=-W). */
+  /** How far the page has turned, 0..1: the corner travels from home (x=R) round the coil to the other side (x=-R). */
   private progress(f: Flip): number {
-    const { W } = this.size;
-    return clamp01((W - f.P.x) / (2 * W));
+    const R = HALF + this.size.W;
+    return clamp01((R - f.P.x) / (2 * R));
   }
 
   /**
-   * The corner can't be pulled too far from the spine (the paper is attached to it): no more than a page width from the spine end on the same side,
-   * and no more than the diagonal from the other end.
+   * The corner can't be pulled too far from the coil (the sheet hangs on it): no further than its reach from the coil
+   * at the same end, and no further than the diagonal from the other end.
    */
   private constrain(f: Flip, P: Pt): Pt {
-    const { W, H } = this.size;
+    const { H } = this.size;
+    const W = HALF + this.size.W;
     const near: Pt = { x: 0, y: f.top ? 0 : H };
     const far: Pt = { x: 0, y: f.top ? H : 0 };
     let q = P;
@@ -904,9 +1158,9 @@ export class HighlighterBook extends HTMLElement {
     o: { vP?: number; v0?: number; omega?: number; speed?: number; accel?: number } = {},
   ): void {
     const f = this.flip!;
-    const { W, H } = this.size;
+    const { H } = this.size;
     const C = this.corner(f);
-    const to = kind === 'turn' ? { x: -W, y: C.y } : kind === 'rest' ? this.restPoint(f) : C;
+    const to = kind === 'turn' ? { x: -C.x, y: C.y } : kind === 'rest' ? this.restPoint(f) : C;
     const from = { ...f.P };
     const d = sub(to, from);
     const omega = o.omega ?? (kind === 'turn' ? TURN_OMEGA : SETTLE_OMEGA);
@@ -916,7 +1170,7 @@ export class HighlighterBook extends HTMLElement {
     // Never faster than the spring can absorb without overshooting: the page stops exactly, no bounce
     v = Math.max(-1, Math.min(omega * 0.85, v));
     // The farther it travels the higher it arcs; lifted from a bottom corner it arcs up, from a top corner it arcs down
-    const lift = (f.top ? 1 : -1) * LIFT * H * Math.min(1, Math.abs(d.x) / (2 * W));
+    const lift = (f.top ? 1 : -1) * LIFT * H * Math.min(1, Math.abs(d.x) / (2 * C.x));
     // Start the pull where it exactly balances the damping: no sudden push or brake at the moment it is let go
     const g = Math.min(1, Math.max(0, (2 * v) / omega));
     const dist = Math.max(1, len(d) + Math.abs(lift));
@@ -1023,16 +1277,19 @@ export class HighlighterBook extends HTMLElement {
     const { W, H } = this.size;
     const C = this.corner(f);
     const P = f.P;
-    const mir = (p: Pt): Pt => (f.dir > 0 ? p : { x: -p.x, y: p.y });
-    const frontOx = f.dir > 0 ? 0 : -W;
-    const backOx = f.dir > 0 ? -W : 0;
+    // Mirrored coordinates → the spread: the coil's axis is at X0, and turning back mirrors left and right
+    const X0 = W + HALF;
+    const sx = (x: number) => X0 + (f.dir > 0 ? x : -x);
+    // Where the front (this side of the sheet) and the back (its other side, laid out like the facing page) sit in the spread
+    const fl = f.dir > 0 ? W + SPINE : 0;
+    const bl = f.dir > 0 ? 0 : W + SPINE;
     const d = sub(C, P);
     const dl = len(d);
     const rect: Pt[] = [
-      { x: 0, y: 0 },
-      { x: W, y: 0 },
-      { x: W, y: H },
-      { x: 0, y: H },
+      { x: HALF, y: 0 },
+      { x: HALF + W, y: 0 },
+      { x: HALF + W, y: H },
+      { x: HALF, y: H },
     ];
     if (dl < 0.5) {
       // Not lifted (yet / any more): the sheet lies flat
@@ -1049,31 +1306,26 @@ export class HighlighterBook extends HTMLElement {
     const fold = clipPoly(rect, side);
 
     // Front: keep only the part that isn't folded
-    const toFront = (q: Pt): Pt => {
-      const r = mir(q);
-      return { x: r.x - frontOx, y: r.y };
-    };
+    const toFront = (q: Pt): Pt => ({ x: sx(q.x) - fl, y: q.y });
     this.$front.style.clipPath = polyCss(keep.map(toFront));
 
-    // Back: what's printed behind point q on the sheet is the opposite page's content at M(q); it gets folded to R(q).
-    // Back element's local coordinates → screen: l → layout position → mirrored coordinates → M then R → back to real coordinates
+    // Back: what's printed behind point q of the sheet is the facing page's layout at M(q), q mirrored across the coil's
+    // axis; folding takes q to R(q). So the back element's own coordinates map to the screen as
+    // local → spread → mirrored → M → R → spread, which is one affine transform
     const reflect = (q: Pt): Pt => {
       const k = 2 * side(q);
       return { x: q.x - k * n.x, y: q.y - k * n.y };
     };
-    const M = (q: Pt): Pt => ({ x: -q.x, y: q.y });
     const toScreen = (l: Pt): Pt => {
-      const layout = { x: l.x + backOx, y: l.y };
-      return mir(reflect(M(mir(layout))));
+      const xs = bl + l.x;
+      const r = reflect({ x: -(f.dir > 0 ? xs - X0 : X0 - xs), y: l.y });
+      return { x: sx(r.x), y: r.y };
     };
     const o = toScreen({ x: 0, y: 0 });
     const ex = sub(toScreen({ x: 1, y: 0 }), o);
     const ey = sub(toScreen({ x: 0, y: 1 }), o);
-    this.$back.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - backOx}, ${o.y})`;
-    const toBack = (q: Pt): Pt => {
-      const r = mir(M(q));
-      return { x: r.x - backOx, y: r.y };
-    };
+    this.$back.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - bl}, ${o.y})`;
+    const toBack = (q: Pt): Pt => ({ x: sx(-q.x) - bl, y: q.y });
     this.$back.style.clipPath = polyCss(fold.map(toBack));
 
     // Two points on the fold line (mirrored coordinates)
@@ -1159,13 +1411,19 @@ export class HighlighterBook extends HTMLElement {
       const k = monthIndex(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1);
       counts.set(k, (counts.get(k) ?? 0) + 1);
     }
-    const W = this.$right.offsetWidth || 380;
-    const H = this.$right.offsetHeight || 360;
-    const padX = 40;
-    const padY = 10;
-    const slotH = (H - 40) / 12;
-    const th = Math.max(16, Math.min(22, slotH - 4));
-    const used = new Map<string, number>();
+    const W = this.$right.offsetWidth || 394;
+    const H = this.$right.offsetHeight || 350;
+    const spreadW = 2 * W + SPINE;
+    // Golden proportions: a tab is t thick and t·φ long; a ribbon is t wide and t·φ² long, its swallowtail cut t/φ deep
+    const t = 18;
+    const tabW = Math.round(t * PHI);
+    const ribL = Math.round(t * PHI * PHI);
+    const notch = Math.round(t / PHI);
+    // Tabs share the fore-edge from H/φ⁴ below the top to H/φ³ above the bottom (clear of the resting corner). Month n sits
+    // frac(n·φ) of the way down: the golden-ratio sequence, which keeps any handful of bookmarks evenly spread out
+    const top0 = PAD_TOP + H / PHI ** 4;
+    const span = H - H / PHI ** 4 - H / PHI ** 3 - t;
+    const placed: { right: boolean; top: number; level: number }[] = [];
     for (const [k, n] of [...counts].sort((a, b) => a[0] - b[0])) {
       let el = this.marks.get(k);
       const fresh = !el;
@@ -1173,6 +1431,7 @@ export class HighlighterBook extends HTMLElement {
         const mark = document.createElement('button');
         mark.type = 'button';
         mark.className = 'mark gone';
+        mark.addEventListener('animationend', () => mark.classList.remove('hop'));
         mark.addEventListener('click', () => {
           if (!mark.classList.contains('ribbon')) this.goTo(k);
         });
@@ -1186,36 +1445,63 @@ export class HighlighterBook extends HTMLElement {
       el.title = name;
       el.setAttribute('aria-label', name);
       const st = el.style;
-      if (fresh || instant) st.transition = 'none';
-      if (k === m || k === m + 1) {
-        st.left = `${k === m ? padX + 24 : padX + 2 * W - 44}px`;
-        st.top = `${padY - 5}px`;
-        st.width = '20px';
-        st.height = '50px';
-        st.paddingTop = '26px';
-        st.borderRadius = '0';
-        st.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%)';
-        el.classList.add('ribbon');
-        el.classList.remove('edge-l', 'edge-r');
-        el.tabIndex = -1;
+      let g: { left: string; top: string; width: string; height: string; padding: string; radius: string; clip: string; right: boolean };
+      const ribbon = k === m || k === m + 1;
+      if (ribbon) {
+        // Hangs from the top edge W/φ⁴ in from the outer edge, the count at the golden section of its length
+        const cx = k === m ? PAD_X + W / PHI ** 4 : PAD_X + spreadW - W / PHI ** 4;
+        g = {
+          left: `${(cx - t / 2).toFixed(1)}px`,
+          top: `${(PAD_TOP - 6).toFixed(1)}px`,
+          width: `${t}px`,
+          height: `${ribL}px`,
+          padding: `${Math.round((ribL - notch) / PHI - 5)}px 0px 0px`,
+          radius: '0px',
+          clip: `polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - ${notch}px), 0 100%)`,
+          right: k > m,
+        };
       } else {
         const right = k > m;
-        // There is already a bookmark at this height on this side (the same month in a different year): stagger it a bit further out
-        const spot = `${right ? 'r' : 'l'}${m0Of(k)}`;
-        const extra = used.get(spot) ?? 0;
-        used.set(spot, extra + 1);
-        st.left = `${right ? padX + 2 * W - 4 + extra * 8 : padX - 26 - extra * 8}px`;
-        st.top = `${padY + 12 + m0Of(k) * slotH}px`;
-        st.width = '30px';
-        st.height = `${th}px`;
-        st.paddingTop = `${(th - 10) / 2}px`;
-        st.borderRadius = right ? '0 6px 6px 0' : '6px 0 0 6px';
-        st.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 0 100%)';
-        el.classList.remove('ribbon');
-        el.classList.toggle('edge-r', right);
-        el.classList.toggle('edge-l', !right);
-        el.tabIndex = 0;
+        const top = top0 + (((m0Of(k) + 1) * PHI) % 1) * span;
+        // Another bookmark already sits at an overlapping height on this side: this one sticks out a little further
+        let level = 0;
+        while (placed.some((p) => p.right === right && p.level === level && Math.abs(p.top - top) < t + 1)) level++;
+        placed.push({ right, top, level });
+        const out = level * Math.round(t / PHI ** 2);
+        g = {
+          left: `${(right ? PAD_X + spreadW - 4 + out : PAD_X - tabW + 4 - out).toFixed(1)}px`,
+          top: `${top.toFixed(1)}px`,
+          width: `${tabW}px`,
+          height: `${t}px`,
+          // The count is centred on the part that sticks out
+          padding: right ? `${(t - 10) / 2}px 0px 0px 4px` : `${(t - 10) / 2}px 4px 0px 0px`,
+          radius: right ? '0 6px 6px 0' : '6px 0 0 6px',
+          clip: 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 0 100%)',
+          right,
+        };
       }
+      // A bookmark whose sheet swings over the coil to the other side doesn't slide across the open pages: it fades out
+      // and comes back on its new side (and if it was already on its way, it starts that again rather than jumping)
+      const side = g.right ? 'r' : 'l';
+      const moved = st.left !== g.left || st.top !== g.top;
+      if (!fresh && !instant && moved && (el.dataset.side !== side || el.classList.contains('hop'))) {
+        el.classList.remove('hop');
+        void el.offsetWidth;
+        el.classList.add('hop');
+      }
+      el.dataset.side = side;
+      if (fresh || instant) st.transition = 'none';
+      st.left = g.left;
+      st.top = g.top;
+      st.width = g.width;
+      st.height = g.height;
+      st.padding = g.padding;
+      st.borderRadius = g.radius;
+      st.clipPath = g.clip;
+      el.classList.toggle('ribbon', ribbon);
+      el.classList.toggle('edge-r', !ribbon && g.right);
+      el.classList.toggle('edge-l', !ribbon && !g.right);
+      el.tabIndex = ribbon ? -1 : 0;
       if (fresh || instant) {
         // A new bookmark (or the whole book jumped to another month): place it first, then fade it in
         void el.offsetWidth;
