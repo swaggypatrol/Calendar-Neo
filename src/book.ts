@@ -346,7 +346,7 @@ const STYLE = /* css */ `
   visibility: hidden;
   transform-origin: 0 0;
 }
-.flip-on .turn { visibility: inherit; }
+.turn.on { visibility: inherit; }
 .flap {
   position: absolute;
   inset: 0;
@@ -407,6 +407,11 @@ highlighter-calendar {
 .spine.over { clip-path: polygon(0 0, 0 0, 0 0); }
 .spine.over.a { z-index: 5; }
 .spine.over.b { z-index: 7; }
+/* The second leaf: a page taken hold of while the other sheet is still dropping back flat goes over it */
+.turn.front.l1, .turn.margin.l1 { z-index: 14; }
+.spine.over.a.l1 { z-index: 15; }
+.flap.l1 { z-index: 16; }
+.spine.over.b.l1 { z-index: 17; }
 /* The page corners: click (or press and pull) to turn. The right one is the real sheet, peeled back and breathing */
 .corner {
   position: absolute;
@@ -486,7 +491,7 @@ interface Motion {
    * What happens on arrival: the page has turned, it has fallen back flat, it has settled into the resting curl, or the
    * resting corner has dropped flat to make way for turning the left page back.
    */
-  kind: 'turn' | 'back' | 'rest' | 'clear';
+  kind: 'turn' | 'back' | 'rest';
 }
 
 /** How a turning sheet is bent at one moment (see bend()). Sheet points are in mirrored coordinates, flat. */
@@ -521,6 +526,26 @@ interface Flip {
   idle?: boolean;
   /** Where the corner would be if the sheet were folded flat, for P to show where it does (kept for the next frame). */
   Q?: Pt;
+  /** The elements it is drawn with. */
+  leaf: Leaf;
+}
+
+/**
+ * One set of elements a turning sheet is drawn with: its front and back, the inner part's back once it has swung past
+ * upright, the light on each, and the coil drawn again over each part. There are two, so one sheet can drop back flat
+ * while the other page is already being taken hold of.
+ */
+interface Leaf {
+  front: HTMLElement;
+  back: HTMLElement;
+  margin: HTMLElement;
+  frontTint: HTMLElement;
+  marginTint: HTMLElement;
+  backTint: HTMLElement;
+  overA: HTMLElement;
+  overACoil: HTMLElement;
+  overB: HTMLElement;
+  overBCoil: HTMLElement;
 }
 
 interface Gesture {
@@ -528,14 +553,12 @@ interface Gesture {
   x: number;
   y: number;
   t: number;
-  /** 'idle' not moved yet; 'drag' the sheet follows the finger; 'wait' the resting corner is getting out of the way before the left page lifts; 'flick' one more turn while a turn is running; 'scroll' vertical, ignored */
-  mode: 'idle' | 'drag' | 'flick' | 'scroll' | 'wait';
+  /** 'idle' not moved yet; 'drag' the sheet follows the finger; 'flick' one more turn while a turn is running; 'scroll' vertical, ignored */
+  mode: 'idle' | 'drag' | 'flick' | 'scroll';
   samples: { t: number; x: number }[];
   origin: Pt;
   /** Pressed on a page corner (or the peeled-back corner of the next sheet): a tap there turns the page. */
   corner: 1 | -1 | 0;
-  /** How far (px) the finger had already moved while the resting corner was getting out of the way. */
-  pre: number;
 }
 
 /** A two-finger trackpad swipe being followed. */
@@ -543,10 +566,6 @@ interface Wheel {
   dir: 1 | -1;
   dx: number;
   origin: Pt;
-  /** The resting corner is still getting out of the way (turning back). */
-  wait: boolean;
-  /** How far (px) the fingers had already swiped by the time the left page could lift. */
-  pre: number;
   samples: { t: number; x: number }[];
   timer: number;
   /** For telling the fingers apart from the momentum that follows them: the largest step so far, the last one, and how many shrank in a row. */
@@ -580,23 +599,13 @@ export class HighlighterBook extends HTMLElement {
   private $left: HTMLElement;
   private $right: HTMLElement;
   private $spread: HTMLElement;
-  private $front: HTMLElement;
-  private $back: HTMLElement;
   private $pool: HTMLElement;
   /** One bookmark for each month with a selection (month index → element). */
   private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
-  /** The coil drawn again above a turning sheet, wherever the wire stands higher than it as it lands. */
-  private $overA: HTMLElement;
-  private $overACoil: HTMLElement;
-  private $overB: HTMLElement;
-  private $overBCoil: HTMLElement;
-  /** The inner part's back, once it has swung past upright, and the light on each part. */
-  private $margin: HTMLElement;
-  private $frontTint: HTMLElement;
-  private $marginTint: HTMLElement;
-  private $backTint: HTMLElement;
+  /** The two sets of elements turning sheets are drawn with (the second one only while the first sheet settles). */
+  private leaves: Leaf[];
   /** Keeps the holes (and the coil running through them) evenly spaced down the page whatever its height. */
   private sizer: ResizeObserver | null = null;
   /** Six pages: the two open ones, plus the two either side prepared ahead of time so a turn never has to wait for one. */
@@ -604,10 +613,11 @@ export class HighlighterBook extends HTMLElement {
   /** The left page's month (month index = year * 12 + month). The right page is m + 1. */
   private m: number;
   private flip: Flip | null = null;
+  /** The resting corner dropping back flat on its own, while the left page is turned back. */
+  private settling: Flip | null = null;
+  private settleRaf = 0;
   /** Page turns requested while a turn is in progress. */
   private queue: (1 | -1)[] = [];
-  /** The next queued turn should play at normal speed (a single click), not riffle speed. */
-  private slowNext = false;
   private raf = 0;
   private lastT = 0;
   private idleRaf = 0;
@@ -648,6 +658,11 @@ export class HighlighterBook extends HTMLElement {
           <div class="spine over b" aria-hidden="true">
             <div class="coil"></div>
           </div>
+          <div class="turn front l1"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div>
+          <div class="turn margin l1"><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div>
+          <div class="flap l1"><div class="turn back l1"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div></div>
+          <div class="spine over a l1" aria-hidden="true"><div class="coil"></div></div>
+          <div class="spine over b l1" aria-hidden="true"><div class="coil"></div></div>
         </div>
         <button class="corner prev" type="button" aria-label="Previous page"></button>
         <button class="corner next" type="button" aria-label="Next page"></button>
@@ -658,19 +673,22 @@ export class HighlighterBook extends HTMLElement {
     this.$left = q('.page.left');
     this.$right = q('.page.right');
     this.$spread = q('.spread');
-    this.$front = q('.turn.front');
-    this.$back = q('.turn.back');
     this.$pool = q('.pool');
     this.$prev = q('.corner.prev');
     this.$next = q('.corner.next');
-    this.$overA = q('.spine.over.a');
-    this.$overACoil = q('.spine.over.a .coil');
-    this.$overB = q('.spine.over.b');
-    this.$overBCoil = q('.spine.over.b .coil');
-    this.$margin = q('.turn.margin');
-    this.$frontTint = q('.turn.front .tint');
-    this.$marginTint = q('.turn.margin .tint');
-    this.$backTint = q('.turn.back .tint');
+    const leaf = (c: string): Leaf => ({
+      front: q(`.turn.front${c}`),
+      back: q(`.turn.back${c}`),
+      margin: q(`.turn.margin${c}`),
+      frontTint: q(`.turn.front${c} .tint`),
+      marginTint: q(`.turn.margin${c} .tint`),
+      backTint: q(`.turn.back${c} .tint`),
+      overA: q(`.spine.over.a${c}`),
+      overACoil: q(`.spine.over.a${c} .coil`),
+      overB: q(`.spine.over.b${c}`),
+      overBCoil: q(`.spine.over.b${c} .coil`),
+    });
+    this.leaves = [leaf(':not(.l1)'), leaf('.l1')];
 
     for (let i = 0; i < 6; i++) {
       const c = document.createElement('highlighter-calendar');
@@ -720,6 +738,7 @@ export class HighlighterBook extends HTMLElement {
     this.wheel = null;
     this.gesture = null;
     this.queue = [];
+    if (this.settling) this.finishFlip(false, this.settling);
     if (this.flip) this.finishFlip(!this.flip.idle && this.flip.motion?.kind === 'turn');
   }
 
@@ -822,6 +841,7 @@ export class HighlighterBook extends HTMLElement {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.stopIdle();
+    if (this.settling) this.finishFlip(false, this.settling);
     if (this.flip) this.finishFlip(false);
     this.queue = [];
     this.m = this.clampLeft(k);
@@ -910,7 +930,7 @@ export class HighlighterBook extends HTMLElement {
 
   private prepareThenRest(): void {
     this.settleTimer = 0;
-    if (this.flip || this.gesture || this.wheel || !this.isConnected) return;
+    if (this.flip || this.settling || this.gesture || this.wheel || !this.isConnected) return;
     const need = this.neighbours;
     for (const k of need) {
       if (this.spareFor(k)) continue;
@@ -930,7 +950,7 @@ export class HighlighterBook extends HTMLElement {
    * (click, drag, swipe, bookmark) starts from this same corner, so the paper is one continuous sheet throughout.
    */
   private rest(): void {
-    if (this.flip || this.gesture || this.wheel || this.queue.length || !this.isConnected || !this.canFlip(1)) return;
+    if (this.flip || this.settling || this.gesture || this.wheel || this.queue.length || !this.isConnected || !this.canFlip(1)) return;
     if (!this.$right.offsetWidth) return;
     this.beginFlip(1, false);
     this.flip!.idle = true;
@@ -1031,10 +1051,12 @@ export class HighlighterBook extends HTMLElement {
         } else this.move('turn');
         return;
       }
-      // Turning back: the peeled corner gets out of the way first, then the left page turns
-      this.clearCorner();
-      this.queue.unshift(-1);
-      this.slowNext = !fast;
+      // Turning back: the left page turns straight away while the peeled corner drops back flat
+      this.backOverCorner(f);
+      if (riffle) {
+        this.move('turn', { speed: RIFFLE_SPEED, accel: RIFFLE_ACCEL, v0: 0 });
+        this.prefetch(-1);
+      } else this.move('turn');
       return;
     }
     this.beginFlip(dir, false);
@@ -1045,9 +1067,46 @@ export class HighlighterBook extends HTMLElement {
     } else this.move('turn');
   }
 
-  /** The resting corner drops back flat, quickly, so the left page can be turned back. */
-  private clearCorner(): void {
-    this.move('clear', { omega: CLEAR_OMEGA, v0: 0 });
+  /**
+   * Turn the left page back while the right page's corner rests peeled: the corner drops back flat by itself (drawn with the
+   * other leaf) and at the same moment the left page lifts, so a hand can take hold of it straight away, like the right one.
+   */
+  private backOverCorner(f: Flip, top = false): void {
+    this.settleAway(f);
+    this.beginFlip(-1, top, this.leaves[1]);
+    this.renderTabs(this.m - 2, false, true);
+  }
+
+  /** A sheet drops back flat on its own (quickly, no bounce) and lies down, while the other page goes on turning. */
+  private settleAway(f: Flip): void {
+    if (this.flip === f) this.flip = null;
+    this.settling = f;
+    f.idle = false;
+    f.motion = null;
+    const from = { ...f.P };
+    const C = this.corner(f);
+    const dist = Math.max(1, len(sub(C, from)));
+    const w = CLEAR_OMEGA;
+    let s = 0;
+    let v = 0;
+    let last = 0;
+    const step = (now: number) => {
+      this.settleRaf = 0;
+      if (this.settling !== f) return;
+      const dt = last ? Math.min(1 / 30, (now - last) / 1000) : 1 / 60;
+      last = now;
+      const n = Math.max(1, Math.ceil(dt * 240));
+      for (let i = 0; i < n; i++) {
+        v += (w * w * (1 - s) - 2 * w * v) * (dt / n);
+        s += v * (dt / n);
+      }
+      const down = (1 - s) * dist < LAND_PX && Math.abs(v) * dist < LAND_PX_S;
+      f.P = down ? { ...C } : { x: from.x + (C.x - from.x) * s, y: from.y + (C.y - from.y) * s };
+      this.render(f);
+      if (down) this.finishFlip(false, f);
+      else this.settleRaf = requestAnimationFrame(step);
+    };
+    this.settleRaf = requestAnimationFrame(step);
   }
 
   /**
@@ -1083,49 +1142,53 @@ export class HighlighterBook extends HTMLElement {
    * Start turning a page. Forward: the right-hand sheet (this side m+1, other side m+2) lifts at the corner and turns left, revealing m+3 below;
    * backward: the left-hand sheet (this side m, other side m-1) turns back to the right, revealing m-2 on the left.
    */
-  private beginFlip(dir: 1 | -1, top = false): void {
+  private beginFlip(dir: 1 | -1, top = false, leaf = this.leaves[0]): void {
     const W = this.$right.offsetWidth;
     const H = this.$right.offsetHeight;
-    for (const el of [this.$front, this.$back, this.$margin]) {
+    const { front, back, margin } = leaf;
+    for (const el of [front, back, margin]) {
       el.style.width = `${W}px`;
       el.style.height = `${H}px`;
       el.style.transform = 'none';
       el.style.clipPath = '';
     }
-    this.$margin.style.clipPath = polyCss([]);
+    margin.style.clipPath = polyCss([]);
     // The front sits where its page was; the back is laid out like the opposite page and mirrored over during the turn
     const [fl, bl] = dir > 0 ? [W + SPINE, 0] : [0, W + SPINE];
-    this.$front.style.left = `${fl}px`;
-    this.$back.style.left = `${bl}px`;
-    this.$margin.style.left = `${bl}px`;
-    this.$front.className = `turn front ${dir > 0 ? 'shape-r' : 'shape-l'}`;
-    this.$back.className = `turn back ${dir > 0 ? 'shape-l' : 'shape-r'}`;
-    this.$margin.className = `turn margin ${dir > 0 ? 'shape-l' : 'shape-r'}`;
+    front.style.left = `${fl}px`;
+    back.style.left = `${bl}px`;
+    margin.style.left = `${bl}px`;
+    for (const [el, near] of [[front, dir > 0], [back, dir < 0], [margin, dir < 0]] as const) {
+      el.classList.toggle('shape-r', near);
+      el.classList.toggle('shape-l', !near);
+      el.classList.add('on');
+    }
     const left = this.holder(this.$left).firstElementChild as HighlighterCalendar;
     const right = this.holder(this.$right).firstElementChild as HighlighterCalendar;
     if (dir > 0) {
-      this.holder(this.$front).append(right);
-      this.holder(this.$back).append(this.take(this.m + 2));
+      this.holder(front).append(right);
+      this.holder(back).append(this.take(this.m + 2));
       this.holder(this.$right).append(this.take(this.m + 3));
     } else {
       // Backward: the left page (m) stays in place, and what folds over to show is its other side (m-1)
-      this.holder(this.$front).append(left);
-      this.holder(this.$back).append(this.take(this.m - 1));
+      this.holder(front).append(left);
+      this.holder(back).append(this.take(this.m - 1));
       this.holder(this.$left).append(this.take(this.m - 2));
     }
     (dir > 0 ? this.$right : this.$left).classList.add('under');
-    this.flip = { dir, top, P: { x: W, y: top ? 0 : H }, motion: null };
+    this.flip = { dir, top, P: { x: W, y: top ? 0 : H }, motion: null, leaf };
     this.flip.P = this.corner(this.flip);
-    this.$spread.classList.add('flip-on');
     this.render();
   }
 
   /** Finish the turn (done=true) or fall back into place. */
-  private finishFlip(done: boolean): void {
-    const f = this.flip;
+  private finishFlip(done: boolean, f: Flip | null = this.flip): void {
     if (!f) return;
-    const front = this.holder(this.$front).firstElementChild as HighlighterCalendar;
-    const back = this.holder(this.$back).firstElementChild as HighlighterCalendar;
+    // The other sheet, still dropping back flat, lies down first: this one is about to rearrange the pages
+    if (f === this.flip && this.settling) this.finishFlip(false, this.settling);
+    const L = f.leaf;
+    const front = this.holder(L.front).firstElementChild as HighlighterCalendar;
+    const back = this.holder(L.back).firstElementChild as HighlighterCalendar;
     if (f.dir > 0) {
       if (done) {
         const oldLeft = this.holder(this.$left).firstElementChild as HighlighterCalendar;
@@ -1149,14 +1212,19 @@ export class HighlighterBook extends HTMLElement {
         this.$pool.append(under, back);
       }
     }
-    this.flip = null;
-    this.$overA.style.clipPath = polyCss([]);
-    this.$overB.style.clipPath = polyCss([]);
-    this.$margin.style.clipPath = polyCss([]);
-    this.$left.classList.remove('under');
-    this.$right.classList.remove('under');
-    this.$spread.classList.remove('flip-on');
-    for (const s of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) s.style.visibility = 'hidden';
+    if (f === this.settling) {
+      cancelAnimationFrame(this.settleRaf);
+      this.settleRaf = 0;
+      this.settling = null;
+    } else this.flip = null;
+    L.overA.style.clipPath = polyCss([]);
+    L.overB.style.clipPath = polyCss([]);
+    L.margin.style.clipPath = polyCss([]);
+    (L.back.parentElement as HTMLElement).style.filter = '';
+    for (const el of [L.front, L.back, L.margin]) el.classList.remove('on');
+    const page = f.dir > 0 ? this.$right : this.$left;
+    page.classList.remove('under');
+    for (const el of [L.front, L.back, L.margin, page]) (el.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
     this.layout();
     if (done) this.dispatchEvent(new CustomEvent('monthchange', { detail: { month: this.month }, bubbles: true, composed: true }));
   }
@@ -1286,7 +1354,9 @@ export class HighlighterBook extends HTMLElement {
         return;
       }
       if (dir < 0) {
-        this.clearCorner();
+        this.queue.shift();
+        this.backOverCorner(f);
+        this.move('turn');
         return;
       }
       // Settled into the resting curl: carry on breathing from exactly here, and any bookmarks hidden for the turn come back
@@ -1303,20 +1373,17 @@ export class HighlighterBook extends HTMLElement {
     while (this.queue.length) {
       const dir = this.queue.shift()!;
       if (!this.canFlip(dir)) continue;
-      const slow = this.slowNext;
-      this.slowNext = false;
       this.beginFlip(dir, false);
       this.renderTabs(this.m + 2 * dir, false, true);
-      if (!slow && this.queue.length) {
+      if (this.queue.length) {
         this.move('turn', { speed: RIFFLE_SPEED, v0: carry, accel: RIFFLE_ACCEL });
         this.prefetch(dir);
       } else {
         // The last one: keeps the riffle's speed and settles softly
-        this.move('turn', { v0: slow ? 0 : carry });
+        this.move('turn', { v0: carry });
       }
       return;
     }
-    this.slowNext = false;
     this.afterLanding(m.kind === 'turn' ? LAND_PAUSE_MS : 120);
   }
 
@@ -1492,9 +1559,9 @@ export class HighlighterBook extends HTMLElement {
    * Draw the sheet as it bends: its inner part (this side up until it stands upright, then its blank back), its outer part
    * folded over (back up), the light on each, the shadow it casts, and who covers whom at the spine.
    */
-  private render(): void {
-    const f = this.flip;
+  private render(f = this.flip): void {
     if (!f) return;
+    const { front, back, margin, frontTint, marginTint, backTint, overA, overACoil, overB, overBCoil } = f.leaf;
     const { W, H } = this.size;
     const C = { x: HALF + W, y: f.top ? 0 : H };
     // Mirrored coordinates → the spread: the coil's axis is at X0, and turning back mirrors left and right
@@ -1509,19 +1576,21 @@ export class HighlighterBook extends HTMLElement {
     const toSpine = (p: Pt): Pt => ({ x: sx(p.x) - (X0 - 28), y: p.y + ROOM_TOP });
     const Q = this.solve(f, C, W, H);
     const b = this.bend(Q, C, W, H);
-    const flap = this.$back.parentElement as HTMLElement;
+    const flap = back.parentElement as HTMLElement;
     if (!b) {
       // Not lifted (yet / any more): the sheet lies flat on its page, the coil through its holes
-      this.$front.style.transform = 'none';
-      this.$front.style.clipPath = '';
-      this.$margin.style.clipPath = polyCss([]);
-      this.$back.style.clipPath = polyCss([]);
-      this.$overA.style.clipPath = polyCss([{ x: HALF, y: -ROOM_TOP }, { x: HALF + W, y: -ROOM_TOP }, { x: HALF + W, y: H + ROOM_BOTTOM }, { x: HALF, y: H + ROOM_BOTTOM }].map(toSpine));
-      this.$overACoil.style.clipPath = '';
-      this.$overB.style.clipPath = polyCss([]);
-      for (const t of this.shadowRoot!.querySelectorAll<HTMLElement>('.tint')) t.style.background = 'transparent';
+      front.style.transform = 'none';
+      front.style.clipPath = '';
+      margin.style.clipPath = polyCss([]);
+      back.style.clipPath = polyCss([]);
+      overA.style.clipPath = polyCss([{ x: HALF, y: -ROOM_TOP }, { x: HALF + W, y: -ROOM_TOP }, { x: HALF + W, y: H + ROOM_BOTTOM }, { x: HALF, y: H + ROOM_BOTTOM }].map(toSpine));
+      overACoil.style.clipPath = '';
+      overB.style.clipPath = polyCss([]);
+      for (const t of [frontTint, marginTint, backTint]) t.style.background = 'transparent';
       flap.style.filter = '';
-      for (const st of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) st.style.visibility = 'hidden';
+      for (const el of [front, back, margin, f.dir > 0 ? this.$right : this.$left]) {
+        (el.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
+      }
       return;
     }
     const { ca, sa, n, k, keep, fold, inner, outer } = b;
@@ -1539,12 +1608,12 @@ export class HighlighterBook extends HTMLElement {
       const ey = sub(at({ x: 0, y: 1 }), o);
       el.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - left}, ${o.y})`;
     };
-    place(this.$front, fl, false, inner);
-    this.$front.style.clipPath = up ? polyCss(keep.map(toFront)) : polyCss([]);
-    place(this.$margin, bl, true, inner);
-    this.$margin.style.clipPath = up ? polyCss([]) : polyCss(keep.map(toBack));
-    place(this.$back, bl, true, outer);
-    this.$back.style.clipPath = polyCss(fold.map(toBack));
+    place(front, fl, false, inner);
+    front.style.clipPath = up ? polyCss(keep.map(toFront)) : polyCss([]);
+    place(margin, bl, true, inner);
+    margin.style.clipPath = up ? polyCss([]) : polyCss(keep.map(toBack));
+    place(back, bl, true, outer);
+    back.style.clipPath = polyCss(fold.map(toBack));
 
     // Light: each part is lit by how it faces the light (from the upper left, a little in front)
     const L = { x: mir(LIGHT.x), y: LIGHT.y, z: LIGHT.z };
@@ -1555,9 +1624,9 @@ export class HighlighterBook extends HTMLElement {
       const lit = (v.x * L.x + v.y * L.y + v.z * L.z) / L.z;
       return lit < 1 ? `rgba(0,0,0,${Math.min(most, 0.3 * (1 - lit)).toFixed(3)})` : `rgba(255,255,255,${Math.min(0.25, 0.25 * (lit - 1)).toFixed(3)})`;
     };
-    this.$frontTint.style.background = up ? shade(nIn, 0.16) : 'transparent';
-    this.$marginTint.style.background = up ? 'transparent' : shade(nIn, 0.1);
-    this.$backTint.style.background = shade(nOut, 0.2);
+    frontTint.style.background = up ? shade(nIn, 0.16) : 'transparent';
+    marginTint.style.background = up ? 'transparent' : shade(nIn, 0.1);
+    backTint.style.background = shade(nOut, 0.2);
 
     // Who is on top at the spine, by height: paper and metal are both opaque. The coil's wire arches over the spine,
     // highest along the middle. Each part of the sheet covers it where it is the higher, and it shows over the paper where
@@ -1619,17 +1688,17 @@ export class HighlighterBook extends HTMLElement {
     const innerPoly = keep.map((q) => ap(inner, q));
     if (Math.abs(ca) > 1e-3 && nearSpine(innerPoly)) {
       const zIn = (x: number) => b.innerZ({ x: (x - inner[4]) / ca, y: 0 });
-      this.$overA.style.clipPath = polyCss(innerPoly.map(toSpine));
-      this.$overACoil.style.clipPath = outline(wire, zIn, 0, H, 0, true, COIL / 2, WIRE_SHADOW);
-    } else this.$overA.style.clipPath = polyCss([]);
+      overA.style.clipPath = polyCss(innerPoly.map(toSpine));
+      overACoil.style.clipPath = outline(wire, zIn, 0, H, 0, true, COIL / 2, WIRE_SHADOW);
+    } else overA.style.clipPath = polyCss([]);
     // Over the outer part (tilted a little along a slanting bend: worked out slice by slice)
     const outerPoly = fold.map((q) => ap(outer, q));
     if (nearSpine(outerPoly)) {
       const back = inv(outer);
       const zOut = (x: number, y: number) => b.outerZ(ap(back, { x, y }));
-      this.$overB.style.clipPath = polyCss(outerPoly.map(toSpine));
-      this.$overBCoil.style.clipPath = outline(wire, zOut, 0, H, 0, false, COIL / 2, WIRE_SHADOW);
-    } else this.$overB.style.clipPath = polyCss([]);
+      overB.style.clipPath = polyCss(outerPoly.map(toSpine));
+      overBCoil.style.clipPath = outline(wire, zOut, 0, H, 0, false, COIL / 2, WIRE_SHADOW);
+    } else overB.style.clipPath = polyCss([]);
 
     // Shading along the bend, and the shadows the lifted sheet casts
     const F = { x: (C.x + Q.x) / 2, y: (C.y + Q.y) / 2 };
@@ -1644,17 +1713,17 @@ export class HighlighterBook extends HTMLElement {
     // Shadows that only exist because the sheet is lifted also fade out as it lands flat
     const lifted = Math.min(1, dl / 60);
     // This side: darker near the bend where the paper curls up
-    if (up) this.strip(this.$front, toFront(A), toFront(B), toFront(Q), 26 + 30 * curl, `rgba(0,0,0,${((0.22 * curl + 0.05) * lifted).toFixed(3)}), transparent`);
-    else (this.$front.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
+    if (up) this.strip(front, toFront(A), toFront(B), toFront(Q), 26 + 30 * curl, `rgba(0,0,0,${((0.22 * curl + 0.05) * lifted).toFixed(3)}), transparent`);
+    else (front.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
     // Past upright, the strip by the binding is paper rolling over the coil: lit along the top of the roll (the bend),
     // falling into soft shade down towards the coil
     if (!up) {
       const band = Math.max(2, (k - n.y * (H / 2)) / Math.max(1e-6, n.x) - HALF);
-      this.strip(this.$margin, toBack(A), toBack(B), toBack({ x: HALF, y: H / 2 }), band, 'rgba(255,255,255,0.45), rgba(255,255,255,0) 45%, rgba(0,0,0,0.1)');
-    } else (this.$margin.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
+      this.strip(margin, toBack(A), toBack(B), toBack({ x: HALF, y: H / 2 }), band, 'rgba(255,255,255,0.45), rgba(255,255,255,0) 45%, rgba(0,0,0,0.1)');
+    } else (margin.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
     // The folded-over part: a highlight at the top of the curl, fading darker outwards
     this.strip(
-      this.$back,
+      back,
       toBack(A),
       toBack(B),
       toBack(C),
@@ -1932,7 +2001,7 @@ export class HighlighterBook extends HTMLElement {
     if (this.gesture || (e.pointerType === 'mouse' && e.button !== 0) || !this.isBlank(e)) return;
     const path = e.composedPath();
     // The peeled-back corner of the resting sheet, and the bit of the next page it uncovers, are part of the corner too
-    const peeled = !!this.flip?.idle && (path.includes(this.$back) || path.includes(this.$right));
+    const peeled = !!this.flip?.idle && (path.includes(this.flip.leaf.back) || path.includes(this.$right));
     this.gesture = {
       id: e.pointerId,
       x: e.clientX,
@@ -1942,7 +2011,6 @@ export class HighlighterBook extends HTMLElement {
       samples: [{ t: e.timeStamp, x: e.clientX }],
       origin: { x: 0, y: 0 },
       corner: path.includes(this.$next) || peeled ? 1 : path.includes(this.$prev) ? -1 : 0,
-      pre: 0,
     };
     try {
       this.$book.setPointerCapture(e.pointerId);
@@ -1957,18 +2025,6 @@ export class HighlighterBook extends HTMLElement {
     if (!g || g.id !== e.pointerId) return;
     g.samples.push({ t: e.timeStamp, x: e.clientX });
     while (g.samples.length > 2 && e.timeStamp - g.samples[0].t > 100) g.samples.shift();
-    if (g.mode === 'wait') {
-      // The peeled corner is out of the way: now the left page lifts and follows the finger from here
-      if (this.flip) return;
-      const r = this.$spread.getBoundingClientRect();
-      this.beginFlip(-1, e.clientY < r.top + r.height / 2);
-      this.renderTabs(this.m - 2, false, true);
-      g.origin = this.corner(this.flip!);
-      g.pre = Math.max(0, e.clientX - g.x);
-      g.x = e.clientX;
-      g.y = e.clientY;
-      g.mode = 'drag';
-    }
     const dx = e.clientX - g.x;
     const dy = e.clientY - g.y;
 
@@ -1989,7 +2045,7 @@ export class HighlighterBook extends HTMLElement {
           this.hurry(dir);
           return;
         }
-        if (!m || m.kind === 'clear') {
+        if (!m) {
           g.mode = 'scroll';
           return;
         }
@@ -1998,7 +2054,6 @@ export class HighlighterBook extends HTMLElement {
         this.raf = 0;
         moving.motion = null;
         this.queue = [];
-        this.slowNext = false;
         g.mode = 'drag';
         g.origin = { ...moving.P };
         this.renderTabs(this.m + 2 * moving.dir, false, true);
@@ -2018,10 +2073,11 @@ export class HighlighterBook extends HTMLElement {
         g.origin = { ...idle.P };
         this.renderTabs(this.m + 2, false, true);
       } else if (idle) {
-        // Turning back: the peeled corner gets out of the way first, then the left page follows the finger
-        g.mode = 'wait';
-        this.clearCorner();
-        return;
+        // Turning back: the left page lifts and follows the finger straight away, while the peeled corner drops back flat
+        g.mode = 'drag';
+        const r = this.$spread.getBoundingClientRect();
+        this.backOverCorner(idle, g.y < r.top + r.height / 2);
+        g.origin = this.corner(this.flip!);
       } else {
         g.mode = 'drag';
         // Pressing on the top half of the page lifts the top corner, the bottom half lifts the bottom corner
@@ -2057,11 +2113,6 @@ export class HighlighterBook extends HTMLElement {
     }
     const s0 = g.samples[0];
     const vx = e.timeStamp > s0.t ? (e.clientX - s0.x) / (e.timeStamp - s0.t) : 0;
-    if (g.mode === 'wait') {
-      // Let go before the left page could lift: a clear swipe still turns it back, once the corner is out of the way
-      this.turnBackLater(!cancelled && (e.clientX - g.x > 40 || vx > FLICK_SPEED));
-      return;
-    }
     if (g.mode !== 'drag' || !this.flip) {
       if (!this.flip) this.afterLanding(120);
       return;
@@ -2069,7 +2120,7 @@ export class HighlighterBook extends HTMLElement {
     // Falling back into the resting curl: settle straight into the lift it should have with the pointer where it is now
     if (e.pointerType === 'mouse') this.hover(e.clientX, e.clientY);
     else this.peelHover = false;
-    this.release(!cancelled, vx, g.pre);
+    this.release(!cancelled, vx);
   }
 
   /** Which open page a point is on: 1 the right one, -1 the left one, 0 neither. */
@@ -2079,24 +2130,14 @@ export class HighlighterBook extends HTMLElement {
     return x > r.left + r.width / 2 ? 1 : -1;
   }
 
-  private turnBackLater(yes: boolean): void {
-    if (yes && this.flip) {
-      this.queue.push(-1);
-      this.slowNext = true;
-    } else if (yes) this.request(-1);
-    else if (!this.flip) this.afterLanding(120);
-  }
-
   /**
    * Let go after a drag or a swipe (vx: the finger's speed in px/ms). Past about a third of the way, or with a flick,
    * the page carries on over and settles flat; otherwise it falls back, into the resting curl if it is the right page's corner.
    */
-  private release(allowTurn: boolean, vx: number, pre = 0): void {
+  private release(allowTurn: boolean, vx: number): void {
     const f = this.flip!;
     const along = f.dir > 0 ? -vx : vx;
-    // Distance swiped before the page could follow (while the resting corner cleared) still counts towards turning it
-    const p = this.progress(f) + (pre * 1.1) / (2 * this.size.W);
-    const go = allowTurn && (p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
+    const go = allowTurn && (this.progress(f) >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
     // The corner moved 1.1× as far as the finger, in mirrored coordinates
     const vP = (f.dir > 0 ? vx : -vx) * 1.1 * 1000;
     // Turning: the bookmarks that will change stay out of sight until the page lies flat. Falling back: they return when it has settled
@@ -2142,20 +2183,19 @@ export class HighlighterBook extends HTMLElement {
       }
       clearTimeout(this.settleTimer);
       const idle = this.takeIdle();
-      let origin: Pt = { x: 0, y: 0 };
-      let wait = false;
+      let origin: Pt;
       if (idle && dir > 0) {
         origin = { ...idle.P };
         this.renderTabs(this.m + 2, false, true);
-      } else if (idle) {
-        wait = true;
-        this.clearCorner();
       } else {
-        this.beginFlip(dir, false);
-        this.renderTabs(this.m + 2 * dir, false, true);
+        if (idle) this.backOverCorner(idle);
+        else {
+          this.beginFlip(dir, false);
+          this.renderTabs(this.m + 2 * dir, false, true);
+        }
         origin = this.corner(this.flip!);
       }
-      w = this.wheel = { dir, dx: 0, origin, wait, pre: 0, samples: [], timer: 0, peak: 0, last: 0, shrinking: 0, events: 0 };
+      w = this.wheel = { dir, dx: 0, origin, samples: [], timer: 0, peak: 0, last: 0, shrinking: 0, events: 0 };
     }
     w.events++;
     if (mag >= w.peak) {
@@ -2167,16 +2207,7 @@ export class HighlighterBook extends HTMLElement {
     w.dx -= step;
     w.samples.push({ t: now, x: w.dx });
     while (w.samples.length > 2 && now - w.samples[0].t > 100) w.samples.shift();
-    if (w.wait && !this.flip) {
-      // The resting corner is out of the way: now the left page lifts and follows from here
-      this.beginFlip(w.dir, false);
-      this.renderTabs(this.m + 2 * w.dir, false, true);
-      w.origin = this.corner(this.flip!);
-      w.wait = false;
-      w.pre = Math.max(0, w.dx);
-      w.dx = 0;
-      w.samples = [{ t: now, x: 0 }];
-    } else if (!w.wait && this.flip && !this.flip.motion) {
+    if (this.flip && !this.flip.motion) {
       const mdx = w.dir > 0 ? w.dx : -w.dx;
       this.flip.P = this.constrain(this.flip, { x: w.origin.x + mdx * 1.1, y: w.origin.y - Math.min(40, Math.abs(mdx) * 0.15) });
       this.render();
@@ -2206,17 +2237,12 @@ export class HighlighterBook extends HTMLElement {
     const s0 = w.samples[0];
     const s1 = w.samples[w.samples.length - 1];
     const vx = s0 && s1 && s1.t > s0.t ? (s1.x - s0.x) / (s1.t - s0.t) : 0;
-    if (w.wait) {
-      // Swiped back while the resting corner was still getting out of the way: turn the page back once it has
-      this.turnBackLater(w.dx > 30 || vx > FLICK_SPEED);
-      return;
-    }
     const f = this.flip;
     if (!f || f.motion) {
       if (!f) this.afterLanding(120);
       return;
     }
-    this.release(true, vx, w.pre);
+    this.release(true, vx);
   }
 }
 
