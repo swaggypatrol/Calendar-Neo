@@ -152,10 +152,10 @@ const STYLE = /* css */ `
   box-sizing: border-box;
   padding: 8px 40px 0;
   border-radius: 32px;
-  /* No card behind the calendar: the book floats over the page with only its own shadow */
+  /* No card behind the calendar: the book floats over the page with only its own shadow. Nothing clips it either: a
+     page lifted to turn rises above everything around it, the field it opened from included */
   background: transparent;
   visibility: hidden;
-  overflow: hidden;
 }
 :host([open]) .panel { visibility: visible; }
 `;

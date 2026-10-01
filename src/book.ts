@@ -304,7 +304,7 @@ highlighter-calendar {
   bottom: ${ROOM_BOTTOM}px;
   background: var(--hb-coil) 50% 0 / 44px var(--hb-pitch) repeat-y;
 }
-/* The same pen, eraser and coil again, above the turning sheet: they show through it while it settles onto the other page */
+/* The same pen, eraser and coil again, above the turning sheet: drawn over it only where they stand higher than it */
 .spine.over {
   z-index: 7;
   clip-path: polygon(0 0, 0 0, 0 0);
@@ -401,6 +401,8 @@ highlighter-calendar {
 .corner.next { right: ${PAD_X}px; }
 .corner.prev { left: ${PAD_X}px; }
 .corner[disabled] { pointer-events: none; }
+.corner:focus { outline: none; }
+.corner:focus-visible { outline: 2px solid color-mix(in srgb, var(--hb-ink) 70%, transparent); outline-offset: -10px; border-radius: 14px; }
 /* Bookmarks: one per month, always the same element. When its page isn't open it sticks out from the fore-edge; when
    its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
 .mark {
@@ -539,8 +541,11 @@ export class HighlighterBook extends HTMLElement {
   private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
-  /** The spine (pen, eraser and coil) drawn again above a turning sheet, showing through it as it settles onto the other page. */
+  /** The spine (pen, eraser and coil) drawn again above a turning sheet, wherever they stand higher than it as it lands. */
   private $spineOver: HTMLElement;
+  private $overCoil: HTMLElement;
+  private $overPen: HTMLElement;
+  private $overEraser: HTMLElement;
   /** The highlighter and the eraser pushed into the coil: pick one up to switch tools. */
   private $pen: HTMLButtonElement;
   private $eraser: HTMLButtonElement;
@@ -611,6 +616,9 @@ export class HighlighterBook extends HTMLElement {
     this.$prev = q('.corner.prev');
     this.$next = q('.corner.next');
     this.$spineOver = q('.spine.over');
+    this.$overCoil = q('.spine.over .coil');
+    this.$overPen = q('.spine.over .pen');
+    this.$overEraser = q('.spine.over .eraser');
     this.$pen = q('.tool.pen');
     this.$eraser = q('.tool.eraser');
     this.$pen.addEventListener('click', () => this.pickTool('highlight'));
@@ -1343,19 +1351,48 @@ export class HighlighterBook extends HTMLElement {
     const toBack = (q: Pt): Pt => ({ x: sx(-q.x) - bl, y: q.y });
     this.$back.style.clipPath = polyCss(fold.map(toBack));
 
-    // The sheet lifted off the page is drawn above the coil, the pen and the eraser, so while it swings over it covers
-    // them. As it comes down onto the other page it settles back under the coil that runs through its holes (and so under
-    // the pen and eraser inside it): over the last stretch of the turn they show through it again, gradually, so nothing
-    // pops into view when the page lands
+    // Who is on top where the turning sheet passes over the spine. Paper is opaque and so is metal: nothing shows through
+    // anything, the higher one simply covers the lower. The coil's wire arches over the spine, highest along the middle;
+    // the pen and eraser lie inside it, lower down. The flap's paper over a point of the spine belongs to the sheet at
+    // some distance d from the binding, and with the sheet tilted at φ off the page it is landing on, that paper is
+    // d·sin φ above it. Up in the air the sheet is far above everything and covers it; as it comes down, the top of the
+    // coil's arch comes through first, then the arch widens out to the holes and the pen and eraser appear under it,
+    // until the sheet lies flat with the coil running through its holes
     const p0 = this.progress(f);
-    const settle = clamp01((p0 - 0.9) / 0.085);
-    this.$spineOver.style.opacity = (settle * settle * (3 - 2 * settle)).toFixed(3);
-    this.$spineOver.style.clipPath = settle > 0
-      ? polyCss(fold.map((q) => {
-          const r = reflect(q);
-          return { x: sx(r.x) - (X0 - 28), y: r.y + ROOM_TOP };
-        }))
-      : polyCss([]);
+    const lean = Math.sin(Math.PI * (1 - p0));
+    const above = (x: number) => reflect({ x, y: H / 2 }).x * lean;
+    const wire = (x: number) => (Math.abs(x) >= COIL / 2 ? -1 : 20 * Math.sqrt(1 - ((2 * x) / COIL) ** 2));
+    const tool = (x: number) => (Math.abs(x) >= PEN_D / 2 ? -1 : 7 + Math.sqrt((PEN_D / 2) ** 2 - x * x));
+    // The stretch of the spine where a thing stands higher than the sheet (it rises to a single peak, so one interval)
+    const span = (h: (x: number) => number): [number, number] | null => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let x = -28; x <= 28; x += 0.5) {
+        if (h(x) > above(x)) {
+          lo = Math.min(lo, x);
+          hi = Math.max(hi, x);
+        }
+      }
+      return lo <= hi ? [lo - 0.25, hi + 0.25] : null;
+    };
+    // As a clip for an element of the spine whose left edge is at `left` in the spine's own coordinates
+    const strip = (r: [number, number] | null, left: number) => {
+      if (!r) return polyCss([]);
+      const a = sx(r[0]) - (X0 - 28) - left;
+      const b = sx(r[1]) - (X0 - 28) - left;
+      const l = Math.min(a, b).toFixed(2);
+      const rr = Math.max(a, b).toFixed(2);
+      return `polygon(${l}px -2000px, ${rr}px -2000px, ${rr}px 2000px, ${l}px 2000px)`;
+    };
+    // Only where the flap actually is: everywhere else the spine is drawn above the pages as usual
+    this.$spineOver.style.clipPath = polyCss(fold.map((q) => {
+      const r = reflect(q);
+      return { x: sx(r.x) - (X0 - 28), y: r.y + ROOM_TOP };
+    }));
+    this.$overCoil.style.clipPath = strip(span(wire), 0);
+    const tools = strip(span(tool), 28 - PEN_D / 2);
+    this.$overPen.style.clipPath = tools;
+    this.$overEraser.style.clipPath = strip(span(tool), 28 - ERASER_D / 2);
 
     // Two points on the fold line (mirrored coordinates)
     const along = { x: -n.y, y: n.x };
