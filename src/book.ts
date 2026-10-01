@@ -72,6 +72,18 @@ const polyCss = (pts: Pt[]) =>
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
+/** An affine map of the plane, in CSS matrix order: x' = a·x + c·y + e, y' = b·x + d·y + f. */
+type Aff = [number, number, number, number, number, number];
+const ap = (m: Aff, q: Pt): Pt => ({ x: m[0] * q.x + m[2] * q.y + m[4], y: m[1] * q.x + m[3] * q.y + m[5] });
+const inv = (m: Aff): Aff => {
+  const det = m[0] * m[3] - m[1] * m[2] || 1e-12;
+  const a = m[3] / det;
+  const b = -m[1] / det;
+  const c = -m[2] / det;
+  const d = m[0] / det;
+  return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
+};
+
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const monthIndex = (y: number, m0: number) => y * 12 + m0;
 const m0Of = (k: number) => ((k % 12) + 12) % 12;
@@ -101,6 +113,19 @@ const SPINE = Math.round(PITCH / PHI);
 const HALF = SPINE / 2;
 /** Across the coil, hole to hole. */
 const COIL = 2 * (HALF + HOLE_INSET);
+/**
+ * The coil's wire seen end on: a circle round the spine, through the holes of both open pages. The pen lies along its
+ * middle; a turning sheet's hole column rides over the top of it from one page to the other.
+ */
+const HOLE_U = HALF + HOLE_INSET;
+const WIRE_Z = 7;
+const WIRE_R = Math.hypot(HOLE_U, WIRE_Z);
+const WIRE_A0 = -Math.atan2(WIRE_Z, HOLE_U);
+/** Where the light comes from: the upper left, a little in front. */
+const LIGHT = (() => {
+  const l = Math.hypot(0.35, 0.45, 1);
+  return { x: -0.35 / l, y: -0.45 / l, z: 1 / l };
+})();
 
 /**
  * The highlighter is pushed into the coil from the top and the eraser from the bottom, meeting at the golden section of
@@ -258,7 +283,10 @@ const STYLE = /* css */ `
   pointer-events: none;
   z-index: 6;
 }
-.turn.front { z-index: 4; }
+.turn.front, .turn.margin { z-index: 4; }
+/* The inner part's back, once it has swung past upright: only the blank margin and its holes are printed there */
+.turn.margin { padding: 0; }
+.tint { position: absolute; inset: 0; }
 /* The folded-over flap is something to grab, not to draw on */
 .turn.back { pointer-events: auto; cursor: grab; }
 .turn.back highlighter-calendar { pointer-events: none; }
@@ -284,7 +312,7 @@ highlighter-calendar {
   margin-left: -28px;
   top: -${ROOM_TOP}px;
   bottom: -${ROOM_BOTTOM}px;
-  z-index: 5;
+  z-index: 3;
   pointer-events: none;
 }
 .hollow {
@@ -304,11 +332,10 @@ highlighter-calendar {
   bottom: ${ROOM_BOTTOM}px;
   background: var(--hb-coil) 50% 0 / 44px var(--hb-pitch) repeat-y;
 }
-/* The same pen, eraser and coil again, above the turning sheet: drawn over it only where they stand higher than it */
-.spine.over {
-  z-index: 7;
-  clip-path: polygon(0 0, 0 0, 0 0);
-}
+/* The same pen, eraser and coil again, over each part of the turning sheet: drawn over it only where they stand higher than it */
+.spine.over { clip-path: polygon(0 0, 0 0, 0 0); }
+.spine.over.a { z-index: 5; }
+.spine.over.b { z-index: 7; }
 .spine.over .tool { pointer-events: none; }
 .spine.over .tools { position: absolute; inset: 0; }
 .tool {
@@ -397,7 +424,7 @@ highlighter-calendar {
   padding: 0;
   background: transparent;
   cursor: pointer;
-  z-index: 8;
+  z-index: 9;
 }
 .corner.next { right: ${PAD_X}px; }
 .corner.prev { left: ${PAD_X}px; }
@@ -408,7 +435,7 @@ highlighter-calendar {
    its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
 .mark {
   position: absolute;
-  z-index: 7;
+  z-index: 8;
   box-sizing: border-box;
   border: 0;
   padding: 0;
@@ -465,6 +492,24 @@ interface Motion {
   kind: 'turn' | 'back' | 'rest' | 'clear';
 }
 
+/** How a turning sheet is bent at one moment (see bend()). Sheet points are in mirrored coordinates, flat. */
+interface Bend {
+  alpha: number;
+  ca: number;
+  sa: number;
+  /** The bend: points q with n·q = k. */
+  n: Pt;
+  k: number;
+  /** The inner part (between the binding and the bend) and the outer part (beyond it, with the corner). */
+  keep: Pt[];
+  fold: Pt[];
+  /** Sheet point → screen (mirrored), for each part, and its height above the pages. */
+  inner: Aff;
+  outer: Aff;
+  innerZ: (q: Pt) => number;
+  outerZ: (q: Pt) => number;
+}
+
 /**
  * One page turn. All geometry is computed in "mirrored coordinates": the origin is at the top of the gutter and the turning page is always on the right, x∈[0,W];
  * turning backwards (dir=-1) mirrors everything left to right. corner is the lifted page corner, P is where that corner has been pulled to,
@@ -477,6 +522,8 @@ interface Flip {
   motion: Motion | null;
   /** Resting: the right page's corner is gently peeled back and breathing, ready to be pulled further. */
   idle?: boolean;
+  /** Where the corner would be if the sheet were folded flat, for P to show where it does (kept for the next frame). */
+  Q?: Pt;
 }
 
 interface Gesture {
@@ -543,9 +590,17 @@ export class HighlighterBook extends HTMLElement {
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
   /** The spine (pen, eraser and coil) drawn again above a turning sheet, wherever they stand higher than it as it lands. */
-  private $spineOver: HTMLElement;
-  private $overCoil: HTMLElement;
-  private $overTools: HTMLElement;
+  private $overA: HTMLElement;
+  private $overACoil: HTMLElement;
+  private $overATools: HTMLElement;
+  private $overB: HTMLElement;
+  private $overBCoil: HTMLElement;
+  private $overBTools: HTMLElement;
+  /** The inner part's back, once it has swung past upright, and the light on each part. */
+  private $margin: HTMLElement;
+  private $frontTint: HTMLElement;
+  private $marginTint: HTMLElement;
+  private $backTint: HTMLElement;
   /** The highlighter and the eraser pushed into the coil: pick one up to switch tools. */
   private $pen: HTMLButtonElement;
   private $eraser: HTMLButtonElement;
@@ -587,15 +642,23 @@ export class HighlighterBook extends HTMLElement {
         <div class="spread">
           <div class="page left shape-l"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="page right shape-r"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
-          <div class="turn front"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
-          <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div></div>
+          <div class="turn front"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div>
+          <div class="turn margin"><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div>
+          <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div></div>
           <div class="spine">
             <div class="hollow"></div>
             <button class="tool pen" type="button" part="pen" title="Highlighter" aria-label="Highlighter"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></button>
             <button class="tool eraser" type="button" part="eraser" title="Eraser" aria-label="Eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></button>
             <div class="coil"></div>
           </div>
-          <div class="spine over" aria-hidden="true">
+          <div class="spine over a" aria-hidden="true">
+            <div class="tools">
+              <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
+              <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
+            </div>
+            <div class="coil"></div>
+          </div>
+          <div class="spine over b" aria-hidden="true">
             <div class="tools">
               <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
               <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
@@ -617,9 +680,16 @@ export class HighlighterBook extends HTMLElement {
     this.$pool = q('.pool');
     this.$prev = q('.corner.prev');
     this.$next = q('.corner.next');
-    this.$spineOver = q('.spine.over');
-    this.$overCoil = q('.spine.over .coil');
-    this.$overTools = q('.spine.over .tools');
+    this.$overA = q('.spine.over.a');
+    this.$overACoil = q('.spine.over.a .coil');
+    this.$overATools = q('.spine.over.a .tools');
+    this.$overB = q('.spine.over.b');
+    this.$overBCoil = q('.spine.over.b .coil');
+    this.$overBTools = q('.spine.over.b .tools');
+    this.$margin = q('.turn.margin');
+    this.$frontTint = q('.turn.front .tint');
+    this.$marginTint = q('.turn.margin .tint');
+    this.$backTint = q('.turn.back .tint');
     this.$pen = q('.tool.pen');
     this.$eraser = q('.tool.eraser');
     this.$pen.addEventListener('click', () => this.pickTool('highlight'));
@@ -1061,18 +1131,21 @@ export class HighlighterBook extends HTMLElement {
   private beginFlip(dir: 1 | -1, top = false): void {
     const W = this.$right.offsetWidth;
     const H = this.$right.offsetHeight;
-    for (const el of [this.$front, this.$back]) {
+    for (const el of [this.$front, this.$back, this.$margin]) {
       el.style.width = `${W}px`;
       el.style.height = `${H}px`;
       el.style.transform = 'none';
       el.style.clipPath = '';
     }
+    this.$margin.style.clipPath = polyCss([]);
     // The front sits where its page was; the back is laid out like the opposite page and mirrored over during the turn
     const [fl, bl] = dir > 0 ? [W + SPINE, 0] : [0, W + SPINE];
     this.$front.style.left = `${fl}px`;
     this.$back.style.left = `${bl}px`;
+    this.$margin.style.left = `${bl}px`;
     this.$front.className = `turn front ${dir > 0 ? 'shape-r' : 'shape-l'}`;
     this.$back.className = `turn back ${dir > 0 ? 'shape-l' : 'shape-r'}`;
+    this.$margin.className = `turn margin ${dir > 0 ? 'shape-l' : 'shape-r'}`;
     const left = this.holder(this.$left).firstElementChild as HighlighterCalendar;
     const right = this.holder(this.$right).firstElementChild as HighlighterCalendar;
     if (dir > 0) {
@@ -1122,7 +1195,9 @@ export class HighlighterBook extends HTMLElement {
       }
     }
     this.flip = null;
-    this.$spineOver.style.clipPath = polyCss([]);
+    this.$overA.style.clipPath = polyCss([]);
+    this.$overB.style.clipPath = polyCss([]);
+    this.$margin.style.clipPath = polyCss([]);
     this.$left.classList.remove('under');
     this.$right.classList.remove('under');
     this.$spread.classList.remove('flip-on');
@@ -1291,93 +1366,208 @@ export class HighlighterBook extends HTMLElement {
   }
 
   /**
-   * Fold the sheet according to the corner position: the front is clipped along the fold line to drop the folded part; the back (the other side of the next sheet)
-   * is mirrored to the other side of the fold line and laid on top; then paint the sheet's shading along the fold line and the shadow it casts on the page below.
+   * How a sheet bends as it turns. It hangs on the coil, so it cannot simply fold flat across the spine: the part still on
+   * its own side (the inner part, from the binding to the bend) swings up round the coil, its column of holes riding along
+   * the wire, while the part beyond the bend (the outer part, with the corner) folds back over it, lying level, back up.
+   * Q is where the corner would be if the sheet were folded flat; the bend is the perpendicular bisector of the corner and
+   * Q, and how far the inner part has swung up follows from how close the bend has come to the binding. Both parts are flat,
+   * so each maps onto the screen by one affine transform (and is drawn by one element), and both know their height.
    */
-  private render(): void {
-    const f = this.flip;
-    if (!f) return;
-    const { W, H } = this.size;
-    const C = this.corner(f);
-    const P = f.P;
-    // Mirrored coordinates → the spread: the coil's axis is at X0, and turning back mirrors left and right
-    const X0 = W + HALF;
-    const sx = (x: number) => X0 + (f.dir > 0 ? x : -x);
-    // Where the front (this side of the sheet) and the back (its other side, laid out like the facing page) sit in the spread
-    const fl = f.dir > 0 ? W + SPINE : 0;
-    const bl = f.dir > 0 ? 0 : W + SPINE;
-    const d = sub(C, P);
+  private bend(Q: Pt, C: Pt, W: number, H: number): Bend | null {
+    const d = sub(C, Q);
     const dl = len(d);
+    if (dl < 0.5) return null;
+    const n = { x: d.x / dl, y: d.y / dl };
+    const k = (dot(n, C) + dot(n, Q)) / 2;
     const rect: Pt[] = [
       { x: HALF, y: 0 },
       { x: HALF + W, y: 0 },
       { x: HALF + W, y: H },
       { x: HALF, y: H },
     ];
-    if (dl < 0.5) {
-      // Not lifted (yet / any more): the sheet lies flat
+    const keep = clipPoly(rect, (q) => k - dot(n, q));
+    const fold = clipPoly(rect, (q) => dot(n, q) - k);
+    const widest = keep.reduce((m, q) => Math.max(m, q.x), 0);
+    const mid = Math.abs(n.x) > 1e-6 ? (k - n.y * (H / 2)) / n.x : widest;
+    const alpha = this.lean(Math.min(widest, Math.max(0, mid)), widest, W);
+    const ca = Math.cos(alpha);
+    const sa = Math.sin(alpha);
+    // The holes ride up over the top of the wire, from the right page's side of it to the left page's: that sets how high
+    // the inner part is (seen from above it swings about the spine, so the corner lands exactly as the sheet lies flat)
+    const ang = WIRE_A0 + (Math.PI - 2 * WIRE_A0) * (alpha / Math.PI);
+    const hz = WIRE_Z + WIRE_R * Math.sin(ang);
+    // Inner part: x' = u·cos α, height hz + (u − hole)·sin α. Outer part: folded back over the inner one at the bend by
+    // π − α (so it lies level), which on the screen is one more affine map of the sheet
+    const k1 = n.x * ca * (1 + ca) + sa * sa;
+    const k2 = 1 + ca;
+    return {
+      alpha,
+      ca,
+      sa,
+      n,
+      k,
+      keep,
+      fold,
+      inner: [ca, 0, 0, 1, 0, 0],
+      outer: [ca - n.x * k1, -n.x * n.y * k2, -n.y * k1, 1 - n.y * n.y * k2, k * k1, k * n.y * k2],
+      innerZ: (q) => hz + (q.x - HOLE_U) * sa,
+      outerZ: (q) => hz + (q.x - HOLE_U) * sa + (dot(n, q) - k) * sa * (ca * (1 - n.x) - n.x),
+    };
+  }
+
+  /**
+   * How far the inner part has swung up round the coil (0 lying on its own page, π on the other) when the bend is e from
+   * the binding. It stays down while only the corner curls, rises as the bend nears the binding, stands upright when just
+   * the blank margin is left on its own side and lies down on the other side as the bend reaches the binding.
+   */
+  private lean(e: number, widest: number, W: number): number {
+    const e1 = 0.9 * (HALF + W);
+    const e2 = HALF + MARGIN_INNER;
+    const blank = e2 + 14;
+    const s = clamp01(1 - e / e1);
+    const s2 = 1 - e2 / e1;
+    let g: number;
+    if (s <= s2) g = 0.5 * (s / s2) ** 2;
+    else {
+      const x = (s - s2) / (1 - s2);
+      const m0 = (1 - s2) / s2;
+      g = 0.5 * (2 * x ** 3 - 3 * x ** 2 + 1) + m0 * (x ** 3 - 2 * x ** 2 + x) + (3 * x ** 2 - 2 * x ** 3);
+    }
+    // Past upright the inner part shows its back, where only the blank margin is printed: not while more than that is on that side
+    g = Math.min(g, 0.5 + 0.5 * clamp01((blank - widest) / (blank - e2)));
+    return Math.PI * g;
+  }
+
+  /**
+   * How the sheet must bend for its corner to show exactly at P, where the hand (or the spring) has it: a few Newton steps
+   * from the last answer, so the corner stays under the finger whatever the paper does on the way.
+   */
+  private solve(f: Flip, C: Pt, W: number, H: number): Pt {
+    const P = f.P;
+    if (len(sub(P, C)) < 0.5) return (f.Q = { ...P });
+    const at = (q: Pt): Pt => {
+      const b = this.bend(q, C, W, H);
+      return b ? ap(b.outer, C) : q;
+    };
+    // Start from last frame's answer; right at the corner the bend has no direction yet, so start from P (a small
+    // curl barely lifts the sheet, so there the two are nearly the same)
+    let Q = f.Q && len(sub(f.Q, C)) > 1 ? f.Q : { ...P };
+    for (let i = 0; i < 8; i++) {
+      const r = at(Q);
+      const ex = r.x - P.x;
+      const ey = r.y - P.y;
+      if (Math.abs(ex) + Math.abs(ey) < 0.05) break;
+      const rx = at({ x: Q.x + 0.5, y: Q.y });
+      const ry = at({ x: Q.x, y: Q.y + 0.5 });
+      const a = (rx.x - r.x) * 2;
+      const b = (ry.x - r.x) * 2;
+      const c = (rx.y - r.y) * 2;
+      const d = (ry.y - r.y) * 2;
+      const det = a * d - b * c;
+      if (Math.abs(det) < 1e-9) break;
+      let dx = (b * ey - d * ex) / det;
+      let dy = (c * ex - a * ey) / det;
+      const m = Math.hypot(dx, dy);
+      if (m > 80) {
+        dx *= 80 / m;
+        dy *= 80 / m;
+      }
+      Q = { x: Q.x + dx, y: Q.y + dy };
+    }
+    f.Q = Q;
+    return Q;
+  }
+
+  /**
+   * Draw the sheet as it bends: its inner part (this side up until it stands upright, then its blank back), its outer part
+   * folded over (back up), the light on each, the shadow it casts, and who covers whom at the spine.
+   */
+  private render(): void {
+    const f = this.flip;
+    if (!f) return;
+    const { W, H } = this.size;
+    const C = { x: HALF + W, y: f.top ? 0 : H };
+    // Mirrored coordinates → the spread: the coil's axis is at X0, and turning back mirrors left and right
+    const X0 = W + HALF;
+    const mir = (x: number) => (f.dir > 0 ? x : -x);
+    const sx = (x: number) => X0 + mir(x);
+    // Where this side of the sheet is laid out in the spread, and where its other side is (like the facing page)
+    const fl = f.dir > 0 ? W + SPINE : 0;
+    const bl = f.dir > 0 ? 0 : W + SPINE;
+    const toFront = (q: Pt): Pt => ({ x: sx(q.x) - fl, y: q.y });
+    const toBack = (q: Pt): Pt => ({ x: sx(-q.x) - bl, y: q.y });
+    const toSpine = (p: Pt): Pt => ({ x: sx(p.x) - (X0 - 28), y: p.y + ROOM_TOP });
+    const Q = this.solve(f, C, W, H);
+    const b = this.bend(Q, C, W, H);
+    const flap = this.$back.parentElement as HTMLElement;
+    if (!b) {
+      // Not lifted (yet / any more): the sheet lies flat on its page, the coil through its holes
+      this.$front.style.transform = 'none';
       this.$front.style.clipPath = '';
+      this.$margin.style.clipPath = polyCss([]);
       this.$back.style.clipPath = polyCss([]);
-      this.$spineOver.style.clipPath = polyCss([]);
-      (this.$back.parentElement as HTMLElement).style.filter = '';
+      this.$overA.style.clipPath = polyCss([{ x: HALF, y: -ROOM_TOP }, { x: HALF + W, y: -ROOM_TOP }, { x: HALF + W, y: H + ROOM_BOTTOM }, { x: HALF, y: H + ROOM_BOTTOM }].map(toSpine));
+      this.$overACoil.style.clipPath = '';
+      this.$overATools.style.clipPath = '';
+      this.$overB.style.clipPath = polyCss([]);
+      for (const t of this.shadowRoot!.querySelectorAll<HTMLElement>('.tint')) t.style.background = 'transparent';
+      flap.style.filter = '';
       for (const st of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) st.style.visibility = 'hidden';
       return;
     }
-    const n = { x: d.x / dl, y: d.y / dl };
-    const F = { x: (C.x + P.x) / 2, y: (C.y + P.y) / 2 };
-    const side = (p: Pt) => dot(sub(p, F), n);
-    const keep = clipPoly(rect, (p) => -side(p));
-    const fold = clipPoly(rect, side);
+    const { ca, sa, n, k, keep, fold, inner, outer } = b;
+    const up = ca >= 0;
 
-    // Front: keep only the part that isn't folded
-    const toFront = (q: Pt): Pt => ({ x: sx(q.x) - fl, y: q.y });
-    this.$front.style.clipPath = polyCss(keep.map(toFront));
-
-    // Back: what's printed behind point q of the sheet is the facing page's layout at M(q), q mirrored across the coil's
-    // axis; folding takes q to R(q). So the back element's own coordinates map to the screen as
-    // local → spread → mirrored → M → R → spread, which is one affine transform
-    const reflect = (q: Pt): Pt => {
-      const k = 2 * side(q);
-      return { x: q.x - k * n.x, y: q.y - k * n.y };
+    // Each side is one element; its own coordinates → sheet (this side, or mirrored for the other side) → screen
+    const place = (el: HTMLElement, left: number, back: boolean, m: Aff) => {
+      const at = (l: Pt): Pt => {
+        const u = mir(left + l.x - X0);
+        const r = ap(m, { x: back ? -u : u, y: l.y });
+        return { x: sx(r.x), y: r.y };
+      };
+      const o = at({ x: 0, y: 0 });
+      const ex = sub(at({ x: 1, y: 0 }), o);
+      const ey = sub(at({ x: 0, y: 1 }), o);
+      el.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - left}, ${o.y})`;
     };
-    const toScreen = (l: Pt): Pt => {
-      const xs = bl + l.x;
-      const r = reflect({ x: -(f.dir > 0 ? xs - X0 : X0 - xs), y: l.y });
-      return { x: sx(r.x), y: r.y };
-    };
-    const o = toScreen({ x: 0, y: 0 });
-    const ex = sub(toScreen({ x: 1, y: 0 }), o);
-    const ey = sub(toScreen({ x: 0, y: 1 }), o);
-    this.$back.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - bl}, ${o.y})`;
-    const toBack = (q: Pt): Pt => ({ x: sx(-q.x) - bl, y: q.y });
+    place(this.$front, fl, false, inner);
+    this.$front.style.clipPath = up ? polyCss(keep.map(toFront)) : polyCss([]);
+    place(this.$margin, bl, true, inner);
+    this.$margin.style.clipPath = up ? polyCss([]) : polyCss(keep.map(toBack));
+    place(this.$back, bl, true, outer);
     this.$back.style.clipPath = polyCss(fold.map(toBack));
 
-    // Who is on top where the turning sheet passes over the spine. Paper is opaque and so is metal: nothing shows through
-    // anything, the higher one simply covers the lower. The coil's wire arches over the spine, highest along the middle;
-    // the pen and eraser lie inside it, lower down. The flap's paper over a point of the spine belongs to the sheet at
-    // some distance d from the binding, and with the sheet tilted at φ off the page it is landing on, that paper is
-    // d·sin φ above it. φ comes from how far the corner still is from where it will land, sideways and up alike, so a
-    // page held up in the air stays above everything however far across it has been carried. Up in the air the sheet
-    // covers it all; as it comes down, the top of the coil's arch comes through first, then the arch widens out to the
-    // holes and the pen and eraser appear under it, until the sheet lies flat with the coil running through its holes.
-    // Worked out slice by slice down the spine, because a tilted sheet is low near its binding and high further off
-    const land = { x: -C.x, y: C.y };
-    const lean = Math.sin(Math.PI * Math.min(0.5, len(sub(P, land)) / (2 * C.x)));
+    // Light: each part is lit by how it faces the light (from the upper left, a little in front)
+    const L = { x: mir(LIGHT.x), y: LIGHT.y, z: LIGHT.z };
+    const nIn = up ? { x: -sa, y: 0, z: ca } : { x: sa, y: 0, z: -ca };
+    const nOut = { x: -ca * sa + sa * ca * n.x, y: sa * n.y, z: ca * ca + sa * sa * n.x };
+    const shade = (v: { x: number; y: number; z: number }) => {
+      const lit = (v.x * L.x + v.y * L.y + v.z * L.z) / L.z;
+      return lit < 1 ? `rgba(0,0,0,${Math.min(0.5, 0.45 * (1 - lit)).toFixed(3)})` : `rgba(255,255,255,${Math.min(0.3, 0.3 * (lit - 1)).toFixed(3)})`;
+    };
+    this.$frontTint.style.background = up ? shade(nIn) : 'transparent';
+    this.$marginTint.style.background = up ? 'transparent' : shade(nIn);
+    this.$backTint.style.background = shade(nOut);
+
+    // Who is on top at the spine, by height: paper and metal are both opaque. The coil's wire arches over the spine,
+    // highest along the middle; the pen and eraser lie inside it, lower. Each part of the sheet covers them where it is the
+    // higher, and they show over it where they are: so the inner part, rising from the coil, has the wire going into its
+    // holes, and the outer part, folded over high up, covers everything until it comes down onto the other page
     const wire = (x: number) => (Math.abs(x) >= COIL / 2 ? -1 : 20 * Math.sqrt(1 - ((2 * x) / COIL) ** 2));
     const tool = (x: number) => (Math.abs(x) >= PEN_D / 2 ? -1 : 7 + Math.sqrt((PEN_D / 2) ** 2 - x * x));
-    // The outline of where a thing stands higher than the paper over it, between y0 and y1, in the spine's coordinates
-    // (shifted down by dy for an element that starts lower): one shape per stretch, so there is never a zero-width seam
-    const outline = (h: (x: number) => number, y0: number, y1: number, dy: number): string => {
-      const n = Math.max(2, Math.ceil((y1 - y0) / 4));
-      const half = (y1 - y0) / n / 2;
+    // The outline of where a thing stands higher than the paper over it (height z(x, y) on the screen), between y0 and
+    // y1, in the spine's coordinates (shifted down by dy for an element that starts lower): one shape per stretch
+    const outline = (h: (x: number) => number, z: (x: number, y: number) => number, y0: number, y1: number, dy: number, flat = false): string => {
+      const steps = flat ? 1 : Math.max(2, Math.ceil((y1 - y0) / 4));
+      const half = (y1 - y0) / steps / 2;
       const runs: { l: Pt[]; r: Pt[] }[] = [];
       let run: { l: Pt[]; r: Pt[] } | null = null;
-      for (let i = 0; i <= n; i++) {
-        const y = y0 + ((y1 - y0) * i) / n;
+      for (let i = 0; i <= steps; i++) {
+        const y = y0 + ((y1 - y0) * i) / steps;
         let lo = Infinity;
         let hi = -Infinity;
         for (let x = -28; x <= 28; x += 0.5) {
-          if (h(x) > reflect({ x, y }).x * lean) {
+          if (h(x) > z(x, y)) {
             if (x < lo) lo = x;
             if (x > hi) hi = x;
           }
@@ -1388,13 +1578,12 @@ export class HighlighterBook extends HTMLElement {
         }
         if (!run) runs.push((run = { l: [], r: [] }));
         const a = sx(lo) - (X0 - 28);
-        const b = sx(hi) - (X0 - 28);
-        run.l.push({ x: Math.min(a, b) - 0.25, y: y + dy });
-        run.r.push({ x: Math.max(a, b) + 0.25, y: y + dy });
+        const c = sx(hi) - (X0 - 28);
+        run.l.push({ x: Math.min(a, c) - 0.25, y: y + dy });
+        run.r.push({ x: Math.max(a, c) + 0.25, y: y + dy });
       }
       if (!runs.length) return polyCss([]);
       const shapes = runs.map(({ l, r }) => {
-        // A stretch only one slice tall still gets that slice's height
         if (l.length === 1) {
           l = [{ x: l[0].x, y: l[0].y - half }, { x: l[0].x, y: l[0].y + half }];
           r = [{ x: r[0].x, y: r[0].y - half }, { x: r[0].x, y: r[0].y + half }];
@@ -1403,44 +1592,66 @@ export class HighlighterBook extends HTMLElement {
       });
       return `path('${shapes.join('')}')`;
     };
-    // Only where the flap actually is: everywhere else the spine is drawn above the pages as usual
-    this.$spineOver.style.clipPath = polyCss(fold.map((q) => {
-      const r = reflect(q);
-      return { x: sx(r.x) - (X0 - 28), y: r.y + ROOM_TOP };
-    }));
-    // (The flap is nowhere near the spine for most of a turn, and all the time the corner rests: nothing to work out)
-    const nearSpine = fold.some((q) => reflect(q).x < 28);
-    this.$overCoil.style.clipPath = nearSpine ? outline(wire, 0, H, 0) : polyCss([]);
-    this.$overTools.style.clipPath = nearSpine ? outline(tool, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP) : polyCss([]);
+    const nearSpine = (poly: Pt[]) =>
+      poly.length > 2 && Math.min(...poly.map((p) => p.x)) < 28 && Math.max(...poly.map((p) => p.x)) > -28;
+    // Over the inner part (its height depends only on how far out it is)
+    const innerPoly = keep.map((q) => ap(inner, q));
+    if (Math.abs(ca) > 1e-3 && nearSpine(innerPoly)) {
+      const zIn = (x: number) => b.innerZ({ x: (x - inner[4]) / ca, y: 0 });
+      this.$overA.style.clipPath = polyCss(innerPoly.map(toSpine));
+      this.$overACoil.style.clipPath = outline(wire, zIn, 0, H, 0, true);
+      this.$overATools.style.clipPath = outline(tool, zIn, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP, true);
+    } else this.$overA.style.clipPath = polyCss([]);
+    // Over the outer part (tilted a little along a slanting bend: worked out slice by slice)
+    const outerPoly = fold.map((q) => ap(outer, q));
+    if (nearSpine(outerPoly)) {
+      const back = inv(outer);
+      const zOut = (x: number, y: number) => b.outerZ(ap(back, { x, y }));
+      this.$overB.style.clipPath = polyCss(outerPoly.map(toSpine));
+      this.$overBCoil.style.clipPath = outline(wire, zOut, 0, H, 0);
+      this.$overBTools.style.clipPath = outline(tool, zOut, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP);
+    } else this.$overB.style.clipPath = polyCss([]);
 
-    // Two points on the fold line (mirrored coordinates)
+    // Shading along the bend, and the shadows the lifted sheet casts
+    const F = { x: (C.x + Q.x) / 2, y: (C.y + Q.y) / 2 };
     const along = { x: -n.y, y: n.x };
     const A = { x: F.x - along.x * 2000, y: F.y - along.y * 2000 };
     const B = { x: F.x + along.x * 2000, y: F.y + along.y * 2000 };
     const p = this.progress(f);
     // How strongly the paper is curled: none when flat at either end, most in the middle of a turn
-    const bend = Math.sin(Math.PI * Math.min(1, p * 1.15));
+    const curl = Math.sin(Math.PI * Math.min(1, p * 1.15));
+    const dl = len(sub(C, Q));
     const flapW = Math.max(10, Math.min(dl / 2, W));
     // Shadows that only exist because the sheet is lifted also fade out as it lands flat
     const lifted = Math.min(1, dl / 60);
-
-    // Front: darker near the fold line where the paper curls up
-    this.strip(this.$front, toFront(A), toFront(B), toFront(P), 26 + 30 * bend, `rgba(0,0,0,${((0.22 * bend + 0.05) * lifted).toFixed(3)}), transparent`);
-    // Back: a highlight at the top of the curl, fading darker outwards
+    // This side: darker near the bend where the paper curls up
+    if (up) this.strip(this.$front, toFront(A), toFront(B), toFront(Q), 26 + 30 * curl, `rgba(0,0,0,${((0.22 * curl + 0.05) * lifted).toFixed(3)}), transparent`);
+    else (this.$front.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
+    // The folded-over part: a highlight at the top of the curl, fading darker outwards
     this.strip(
       this.$back,
       toBack(A),
       toBack(B),
       toBack(C),
       flapW * 0.8,
-      `rgba(255,255,255,${(0.28 * bend).toFixed(3)}), rgba(0,0,0,${(0.1 * bend).toFixed(3)}) 55%, transparent`,
+      `rgba(255,255,255,${(0.28 * curl).toFixed(3)}), rgba(0,0,0,${(0.1 * curl).toFixed(3)}) 55%, transparent`,
     );
-    // The shadow of the folded-over flap also follows the curl, vanishing exactly when the turn completes
-    const sh = Math.max(bend, 0.6 * lifted * (1 - p));
-    (this.$back.parentElement as HTMLElement).style.filter = `drop-shadow(0 0 ${(7 * sh).toFixed(1)}px rgba(0, 0, 0, ${(0.22 * sh).toFixed(3)}))`;
-    // Page below: the shadow cast by the lifted sheet, hugging the fold line and fading outwards
+    // The folded-over part casts a shadow that grows softer and further off the higher it is
+    const crease = Math.abs(n.x) > 1e-6 ? (k - n.y * (H / 2)) / n.x : HALF;
+    const high = Math.max(0, b.innerZ({ x: crease, y: 0 }));
+    const sh = Math.max(curl, 0.6 * lifted * (1 - p));
+    flap.style.filter = `drop-shadow(${(0.08 * high).toFixed(1)}px ${(0.14 * high).toFixed(1)}px ${(7 * sh + 0.22 * high).toFixed(1)}px rgba(0, 0, 0, ${Math.min(0.3, 0.22 * sh + 0.0012 * high).toFixed(3)}))`;
+    // The page below: the shadow of the lifted sheet along where the inner part now ends
     const under = f.dir > 0 ? this.$right : this.$left;
-    this.strip(under, toFront(A), toFront(B), toFront(C), 18 + 50 * bend, `rgba(0,0,0,${(0.3 * Math.max(bend, 0.35 * lifted * (1 - p))).toFixed(3)}), transparent`);
+    const toUnder = (s: Pt): Pt => ({ x: sx(s.x) - fl, y: s.y });
+    this.strip(
+      under,
+      toUnder(ap(inner, A)),
+      toUnder(ap(inner, B)),
+      toUnder(ap(inner, C)),
+      18 + 50 * curl,
+      `rgba(0,0,0,${(0.3 * Math.max(curl, 0.35 * lifted * (1 - p)) * Math.max(0, ca)).toFixed(3)}), transparent`,
+    );
   }
 
   /** Lay a gradient along a line (a→b, local coordinates), fading out from the line towards the inside side. */
