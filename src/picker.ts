@@ -143,8 +143,8 @@ const STYLE = /* css */ `
   box-sizing: border-box;
   padding: 28px 40px 0;
   border-radius: 32px;
-  background: var(--hp-panel-bg);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.16);
+  /* No card behind the calendar: the book floats over the page with only its own shadow */
+  background: transparent;
   visibility: hidden;
   overflow: hidden;
 }

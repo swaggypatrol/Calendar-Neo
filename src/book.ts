@@ -161,30 +161,50 @@ highlighter-calendar {
 .corner {
   position: absolute;
   bottom: 30px;
-  width: 30px;
-  height: 30px;
+  width: 72px;
+  height: 72px;
   border: 0;
   padding: 0;
   background: transparent;
   cursor: pointer;
   z-index: 6;
+  transition: opacity 0.3s;
 }
+/* The page corner, peeled back: the bottom-right triangle shows the page underneath, the top-left triangle is the
+   folded-over flap (its back, shaded towards the fold) with a curled tip. It breathes slowly, as if the paper
+   were lifting in a draught. */
 .corner::before {
   content: '';
   position: absolute;
   bottom: 0;
-  width: 14px;
-  height: 14px;
-  transition: width 0.18s, height 0.18s;
-  box-shadow: -2px -2px 5px rgba(0, 0, 0, 0.12);
+  width: var(--curl, 46px);
+  height: var(--curl, 46px);
+  background: linear-gradient(
+    var(--curl-dir, 315deg),
+    color-mix(in srgb, var(--hb-paper) 90%, #000) 0 50%,
+    color-mix(in srgb, var(--hb-paper) 78%, #000) 50%,
+    color-mix(in srgb, var(--hb-paper) 93%, #fff) 58%,
+    var(--hb-paper) 75%,
+    var(--hb-paper-edge) 100%
+  );
+  filter: drop-shadow(-2px -2px 3px rgba(0, 0, 0, 0.14));
+  transition: width 0.35s var(--hb-ease), height 0.35s var(--hb-ease);
+  animation: hb-curl 3.4s ease-in-out infinite;
+}
+@keyframes hb-curl {
+  0%, 100% { width: var(--curl, 46px); height: var(--curl, 46px); }
+  50% { width: calc(var(--curl, 46px) + 10px); height: calc(var(--curl, 46px) + 10px); }
 }
 .corner.next { right: 40px; }
-.corner.next::before { right: 0; background: linear-gradient(135deg, var(--hb-paper-edge) 50%, transparent 50%); border-radius: 0 0 10px 0; }
-.corner.prev { left: 40px; }
-.corner.prev::before { left: 0; background: linear-gradient(225deg, var(--hb-paper-edge) 50%, transparent 50%); border-radius: 0 0 0 10px; box-shadow: 2px -2px 5px rgba(0, 0, 0, 0.12); }
-.corner:hover::before { width: 24px; height: 24px; }
-.corner { transition: opacity 0.3s; }
+.corner.next::before { right: 0; border-radius: 40% 0 10px 0; }
+.corner.next:hover { --curl: 62px; }
+/* Turning back is mostly done by dragging; the left corner only peels when you point at it */
+.corner.prev { left: 40px; opacity: 0; }
+.corner.prev:hover { opacity: 1; }
+.corner.prev::before { left: 0; --curl-dir: 45deg; border-radius: 0 40% 0 10px; filter: drop-shadow(2px -2px 3px rgba(0, 0, 0, 0.14)); }
+.corner.prev::before { background: linear-gradient(45deg, color-mix(in srgb, var(--hb-paper) 90%, #000) 0 50%, color-mix(in srgb, var(--hb-paper) 78%, #000) 50%, color-mix(in srgb, var(--hb-paper) 93%, #fff) 58%, var(--hb-paper) 75%, var(--hb-paper-edge) 100%); }
 .corner[disabled] { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .corner::before { animation: none; } }
 /* Bookmarks: one per month, always the same element. When its page isn't open it sticks out from the fore-edge; when
    its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
 .mark {
