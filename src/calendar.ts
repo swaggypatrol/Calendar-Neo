@@ -307,9 +307,10 @@ export class HighlighterCalendar extends HTMLElement {
   }
 
   connectedCallback(): void {
-    // An already-drawn calendar moved into another container (e.g. onto the back of a page mid-turn): don't re-render, keep the hand-drawn ink
-    if (this.cells.length) this.measure();
-    else this.render();
+    // An already-drawn calendar moved into another container (e.g. onto the back of a page mid-turn): don't re-render, keep the
+    // hand-drawn ink, and don't measure here either (that would force a layout in the middle of an animation frame); the
+    // resize observer's first callback measures it once the browser has laid it out anyway
+    if (!this.cells.length) this.render();
     this.ro = new ResizeObserver(() => this.measure());
     this.ro.observe(this.$wrap);
   }
