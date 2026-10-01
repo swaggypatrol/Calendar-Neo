@@ -79,6 +79,7 @@ All components share these attributes:
 | `hold-delay` | How long (ms) the pen must rest before it counts as holding, default 320 |
 | `value` | Initially selected dates, comma separated |
 | `min`, `max` | Selectable range (see above) |
+| `theme` | `light` or `dark` to override the system colour scheme; leave it out to follow the system |
 
 Events: `input` (fires as each day is selected or cleared while drawing) and `change` (after you lift the pen, if anything changed), both with `detail: { value, added, removed }`; `monthchange` when the visible month changes.
 
@@ -88,7 +89,7 @@ Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the pick
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+npm run dev          # http://localhost:5173 (the sun / moon button switches day and night)
 npm run dev:booking  # future-only demo: http://localhost:5173/booking.html
 npm test             # unit tests for the selection logic
 npm run build        # library build into dist/

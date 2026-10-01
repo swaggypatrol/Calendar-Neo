@@ -155,12 +155,17 @@ const STYLE = /* css */ `
   --deck-gap: 20px;
   display: block;
 }
+/* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
 @media (prefers-color-scheme: dark) {
-  :host {
+  :host(:not([theme="light"])) {
     --hc-card-bg: #2a2e35;
     --hc-card-edge: rgba(255, 255, 255, 0.14);
   }
 }
+:host([theme="dark"]) {
+    --hc-card-bg: #2a2e35;
+    --hc-card-edge: rgba(255, 255, 255, 0.14);
+  }
 .deck {
   display: grid;
   justify-content: center;
@@ -187,7 +192,7 @@ highlighter-calendar.inert,
 .deck.busy highlighter-calendar { pointer-events: none; }
 `;
 
-const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
+const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max', 'theme'];
 
 /**
  * <highlighter-deck>: a stream of month cards, at most two side by side, that follows the finger like paging on a touch screen.

@@ -49,8 +49,9 @@ const STYLE = /* css */ `
   font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   color: var(--hp-fg);
 }
+/* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
 @media (prefers-color-scheme: dark) {
-  :host {
+  :host(:not([theme="light"])) {
     --hp-pill-bg: #2a2e35;
     --hp-pill-open: #353a42;
     --hp-fg: #eceef1;
@@ -59,6 +60,14 @@ const STYLE = /* css */ `
     --hp-ring: #eceef1;
   }
 }
+:host([theme="dark"]) {
+    --hp-pill-bg: #2a2e35;
+    --hp-pill-open: #353a42;
+    --hp-fg: #eceef1;
+    --hp-muted: #a3aab4;
+    --hp-panel-bg: #202328;
+    --hp-ring: #eceef1;
+  }
 .pill {
   position: relative;
   transition: background 0.2s, box-shadow 0.2s, min-width 0.35s cubic-bezier(0.65, 0, 0.35, 1);
@@ -151,7 +160,7 @@ const STYLE = /* css */ `
 :host([open]) .panel { visibility: visible; }
 `;
 
-const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value', 'min', 'max'];
+const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value', 'min', 'max', 'theme'];
 
 /**
  * <highlighter-picker>: a date field for booking sites.

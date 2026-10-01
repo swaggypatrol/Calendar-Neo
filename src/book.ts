@@ -69,14 +69,21 @@ const STYLE = /* css */ `
   --hb-ease: cubic-bezier(0.65, 0, 0.35, 1);
   display: block;
 }
+/* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
 @media (prefers-color-scheme: dark) {
-  :host {
+  :host(:not([theme="light"])) {
     --hb-paper: #2f3238;
     --hb-paper-edge: #45484f;
     --hb-line: rgba(255, 255, 255, 0.07);
     --hb-shadow: rgba(0, 0, 0, 0.45);
   }
 }
+:host([theme="dark"]) {
+    --hb-paper: #2f3238;
+    --hb-paper-edge: #45484f;
+    --hb-line: rgba(255, 255, 255, 0.07);
+    --hb-shadow: rgba(0, 0, 0, 0.45);
+  }
 .book {
   position: relative;
   width: max-content;
@@ -231,7 +238,7 @@ highlighter-calendar {
 .mark.gone { opacity: 0; pointer-events: none; }
 `;
 
-const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max'];
+const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max', 'theme'];
 
 /**
  * One page turn. All geometry is computed in "mirrored coordinates": the origin is at the top of the gutter and the turning page is always on the right, x∈[0,W];

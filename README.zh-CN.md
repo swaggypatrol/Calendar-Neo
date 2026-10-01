@@ -79,6 +79,7 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 | `hold-delay` | 停笔多久（毫秒）开始算长按，默认 320 |
 | `value` | 初始选中的日期，逗号分隔 |
 | `min`、`max` | 可选范围（见上文） |
+| `theme` | `light` 或 `dark`，强制日间或夜间；不写就跟随系统 |
 
 事件：`input`（涂的过程中每选中 / 取消一天触发一次）、`change`（松笔后有变化时），`detail` 都是 `{ value, added, removed }`；`monthchange`（看到的月份变了）。
 
@@ -88,7 +89,7 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 
 ```bash
 npm install
-npm run dev          # 打开 http://localhost:5173
+npm run dev          # 打开 http://localhost:5173（右上角的太阳 / 月亮按钮切换日夜间）
 npm run dev:booking  # 只选未来的演示：http://localhost:5173/booking.html
 npm test             # 选择逻辑的单元测试
 npm run build        # 打包到 dist/

@@ -8,7 +8,7 @@
   font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #121418;
     --fg: #e8eaed;
     --muted: #9aa1ab;
@@ -16,6 +16,13 @@
     --line: rgba(255, 255, 255, 0.1);
   }
 }
+:root[data-theme="dark"] {
+    --bg: #121418;
+    --fg: #e8eaed;
+    --muted: #9aa1ab;
+    --card: #1c1f24;
+    --line: rgba(255, 255, 255, 0.1);
+  }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); }
 main { max-width: 1240px; min-height: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
@@ -36,7 +43,16 @@ highlighter-deck { flex: 1 1 100%; }
   appearance: none; border: 0; border-radius: 999px; padding: 14px 22px; margin-left: 4px;
   background: #222; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
 }
-@media (prefers-color-scheme: dark) { .bar .go { background: #eceef1; color: #121418; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bar .go { background: #eceef1; color: #121418; } }
+:root[data-theme="dark"] .bar .go { background: #eceef1; color: #121418; }
+.theme-toggle {
+  position: fixed; top: 16px; right: 16px; z-index: 100;
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); transition: transform 0.2s;
+}
+.theme-toggle:hover { transform: rotate(-12deg) scale(1.06); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.45s; }
 .panel {
   flex: 1 1 100%;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

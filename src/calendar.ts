@@ -46,15 +46,23 @@ const STYLE = /* css */ `
   color: var(--hc-fg);
   font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
+/* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
 @media (prefers-color-scheme: dark) {
-  :host {
+  :host(:not([theme="light"])) {
     --hc-bg: #2a2e35;
     --hc-fg: #e8eaed;
     --hc-muted: #8d949e;
     --hc-line: rgba(255, 255, 255, 0.08);
   }
-  .day.selected { color: #1d2127; }
+  :host(:not([theme="light"])) .day.selected { color: #1d2127; }
 }
+:host([theme="dark"]) {
+    --hc-bg: #2a2e35;
+    --hc-fg: #e8eaed;
+    --hc-muted: #8d949e;
+    --hc-line: rgba(255, 255, 255, 0.08);
+  }
+:host([theme="dark"]) .day.selected { color: #1d2127; }
 .hc {
   user-select: none;
   -webkit-user-select: none;
@@ -89,9 +97,11 @@ header {
 .hc.hide-nav .nav { visibility: hidden; }
 /* Months already past: a dark vignette around the edges */
 .hc.vignette { box-shadow: inset 0 0 44px 10px rgba(80, 60, 40, 0.16); }
+/* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
 @media (prefers-color-scheme: dark) {
-  .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
+  :host(:not([theme="light"])) .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
 }
+:host([theme="dark"]) .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
 .nav:focus-visible { outline: 2px solid var(--hc-accent); }
 .weekdays {
   display: grid;
@@ -216,6 +226,7 @@ export class HighlighterCalendar extends HTMLElement {
     'value',
     'hide-nav',
     'vignette',
+    'theme',
     'min',
     'max',
   ];
@@ -272,11 +283,8 @@ export class HighlighterCalendar extends HTMLElement {
     this.ink = new InkCanvas(this.$canvas);
     this.engine.onFlip = (e) => this.handleFlip(e);
     this.engine.isDisabled = (key) => !this.range.allows(key);
-    this.ink.boost = !!this.dark?.matches;
-    this.dark?.addEventListener('change', (e) => {
-      this.ink.boost = e.matches;
-      this.kick();
-    });
+    this.updateBoost();
+    this.dark?.addEventListener('change', () => this.updateBoost());
 
     const now = new Date();
     this.year = now.getFullYear();
@@ -342,6 +350,9 @@ export class HighlighterCalendar extends HTMLElement {
       case 'hold-delay':
         this.holdDelay = Math.max(80, Number(v) || 320);
         break;
+      case 'theme':
+        this.updateBoost();
+        break;
       case 'vignette':
         this.shadowRoot!.querySelector('.hc')!.classList.toggle('vignette', v !== null);
         break;
@@ -357,6 +368,13 @@ export class HighlighterCalendar extends HTMLElement {
         this.applyRange();
         break;
     }
+  }
+
+  /** Dark backgrounds make translucent yellow look muddy, so the ink is drawn twice there. */
+  private updateBoost(): void {
+    const t = this.getAttribute('theme');
+    this.ink.boost = t === 'dark' || (t !== 'light' && !!this.dark?.matches);
+    this.kick();
   }
 
   // ---------- Public API ----------
