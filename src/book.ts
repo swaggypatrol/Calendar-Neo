@@ -90,6 +90,7 @@ const STYLE = /* css */ `
   margin: 0 auto;
   padding: 10px 40px 30px;
   touch-action: pan-y;
+  overscroll-behavior: contain;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -175,43 +176,10 @@ highlighter-calendar {
   background: transparent;
   cursor: pointer;
   z-index: 6;
-  transition: opacity 0.3s;
-}
-/* The page corner, peeled back: the bottom-right triangle shows the page underneath, the top-left triangle is the
-   folded-over flap (its back, shaded towards the fold) with a curled tip. It breathes slowly, as if the paper
-   were lifting in a draught. */
-.corner::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  width: var(--curl, 46px);
-  height: var(--curl, 46px);
-  background: linear-gradient(
-    var(--curl-dir, 315deg),
-    color-mix(in srgb, var(--hb-paper) 90%, #000) 0 50%,
-    color-mix(in srgb, var(--hb-paper) 78%, #000) 50%,
-    color-mix(in srgb, var(--hb-paper) 93%, #fff) 58%,
-    var(--hb-paper) 75%,
-    var(--hb-paper-edge) 100%
-  );
-  filter: drop-shadow(-2px -2px 3px rgba(0, 0, 0, 0.14));
-  transition: width 0.35s var(--hb-ease), height 0.35s var(--hb-ease);
-  animation: hb-curl 3.4s ease-in-out infinite;
-}
-@keyframes hb-curl {
-  0%, 100% { width: var(--curl, 46px); height: var(--curl, 46px); }
-  50% { width: calc(var(--curl, 46px) + 10px); height: calc(var(--curl, 46px) + 10px); }
 }
 .corner.next { right: 40px; }
-.corner.next::before { right: 0; border-radius: 40% 0 10px 0; }
-.corner.next:hover { --curl: 62px; }
-/* Turning back is mostly done by dragging; the left corner only peels when you point at it */
-.corner.prev { left: 40px; opacity: 0; }
-.corner.prev:hover { opacity: 1; }
-.corner.prev::before { left: 0; --curl-dir: 45deg; border-radius: 0 40% 0 10px; filter: drop-shadow(2px -2px 3px rgba(0, 0, 0, 0.14)); }
-.corner.prev::before { background: linear-gradient(45deg, color-mix(in srgb, var(--hb-paper) 90%, #000) 0 50%, color-mix(in srgb, var(--hb-paper) 78%, #000) 50%, color-mix(in srgb, var(--hb-paper) 93%, #fff) 58%, var(--hb-paper) 75%, var(--hb-paper-edge) 100%); }
-.corner[disabled] { opacity: 0; pointer-events: none; }
-@media (prefers-reduced-motion: reduce) { .corner::before { animation: none; } }
+.corner.prev { left: 40px; }
+.corner[disabled] { pointer-events: none; }
 /* Bookmarks: one per month, always the same element. When its page isn't open it sticks out from the fore-edge; when
    its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
 .mark {
@@ -250,6 +218,8 @@ interface Flip {
   top: boolean;
   P: Pt;
   anim: { from: Pt; to: Pt; start: number; ms: number; ease: (t: number) => number; lift: number } | null;
+  /** Resting: the right page's corner is gently peeled back and breathing, ready to be pulled further. */
+  idle?: boolean;
 }
 
 /**
@@ -284,7 +254,16 @@ export class HighlighterBook extends HTMLElement {
   /** Page turns requested while a turn is in progress. */
   private queue: (1 | -1)[] = [];
   private raf = 0;
-  private hintRaf = 0;
+  private idleRaf = 0;
+  /** How far the resting corner is peeled back (px), eased towards its target every frame. */
+  private peel = 0;
+  private peelHover = false;
+  private hintAt = -Infinity;
+  /** The next queued turn should play at normal speed (a single click), not riffle speed. */
+  private slowNext = false;
+  /** Trackpad two-finger swipe in progress, and a short lock that swallows the momentum tail after it ends. */
+  private wheel: { dir: 1 | -1; dx: number; origin: Pt; wait: boolean; samples: { t: number; x: number }[]; timer: number } | null = null;
+  private wheelLock = 0;
   private selection: string[] = [];
   private range = new DayRange();
   private gesture: {
@@ -292,8 +271,9 @@ export class HighlighterBook extends HTMLElement {
     x: number;
     y: number;
     t: number;
-    mode: 'idle' | 'drag' | 'flick' | 'scroll';
+    mode: 'idle' | 'drag' | 'flick' | 'scroll' | 'wait';
     samples: { t: number; x: number }[];
+    origin: Pt;
   } | null = null;
 
   constructor() {
@@ -346,15 +326,20 @@ export class HighlighterBook extends HTMLElement {
     this.$book.addEventListener('pointermove', (e) => this.onMove(e));
     this.$book.addEventListener('pointerup', (e) => this.onUp(e, false));
     this.$book.addEventListener('pointercancel', (e) => this.onUp(e, true));
+    this.$book.addEventListener('pointerleave', () => (this.peelHover = false));
+    this.$book.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
   }
 
   connectedCallback(): void {
     this.layout();
+    this.rest();
   }
 
   disconnectedCallback(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    cancelAnimationFrame(this.idleRaf);
+    this.idleRaf = 0;
     if (this.flip) this.finishFlip(this.progress(this.flip) >= 0.5);
     this.queue = [];
   }
@@ -450,35 +435,20 @@ export class HighlighterBook extends HTMLElement {
   show(month: string): void {
     const k = parseKey(month);
     if (k === null) return;
-    this.stopHint();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.stopIdle();
     if (this.flip) this.finishFlip(false);
     this.queue = [];
     this.m = this.clampLeft(k);
     this.layout(true);
+    this.rest();
   }
 
-  /** Lift the right page's corner and wiggle it twice to hint that pages can be turned. */
+  /** Lift the resting corner higher for a moment and let it settle back, hinting that pages can be turned. */
   hint(): void {
-    if (this.flip || this.gesture || this.hintRaf || !this.canFlip(1)) return;
-    this.beginFlip(1, false);
-    const t0 = performance.now();
-    const tick = (now: number) => {
-      const t = (now - t0) / 1000;
-      if (!this.flip || this.gesture || t > 1.1) {
-        this.hintRaf = 0;
-        if (this.flip && !this.flip.anim) this.finishFlip(false);
-        return;
-      }
-      // The corner lifts a little and drops again, as if flicked twice by the wind
-      const k = Math.abs(Math.sin((t * Math.PI) / 0.34)) * Math.exp(-t * 2.4);
-      const C = this.corner(this.flip);
-      this.flip.P = { x: C.x - 46 * k, y: C.y - 30 * k };
-      this.render();
-      this.hintRaf = requestAnimationFrame(tick);
-    };
-    this.hintRaf = requestAnimationFrame(tick);
+    this.hintAt = performance.now();
+    this.rest();
   }
 
   // ---------- Page turning ----------
@@ -503,23 +473,83 @@ export class HighlighterBook extends HTMLElement {
     return dir > 0 ? this.m + 2 <= this.range.maxMonth : this.m + 1 - 2 >= this.range.minMonth;
   }
 
-  private stopHint(): void {
-    if (!this.hintRaf) return;
-    cancelAnimationFrame(this.hintRaf);
-    this.hintRaf = 0;
-    if (this.flip && !this.flip.anim) this.finishFlip(false);
+  /**
+   * At rest the right page's bottom corner is the actual sheet, peeled back a little and slowly breathing. Every turn
+   * (click, drag, swipe, bookmark) starts from this same corner, so the paper never jumps from a fake dog-ear to the real page.
+   */
+  private rest(): void {
+    if (this.flip || this.gesture || this.wheel || this.queue.length || !this.isConnected || !this.canFlip(1)) return;
+    if (!this.$right.offsetWidth) return;
+    this.beginFlip(1, false);
+    this.flip!.idle = true;
+    this.peel = 0;
+    if (!this.idleRaf) this.idleRaf = requestAnimationFrame(this.idleTick);
+  }
+
+  private idleTick = (now: number): void => {
+    this.idleRaf = 0;
+    const f = this.flip;
+    if (!f?.idle) return;
+    // Hidden (e.g. the date field is closed): don't burn frames, check again later
+    const visible = this.$book.checkVisibility ? this.$book.checkVisibility({ visibilityProperty: true }) : true;
+    if (!visible) {
+      window.setTimeout(() => {
+        if (!this.idleRaf && this.flip?.idle) this.idleRaf = requestAnimationFrame(this.idleTick);
+      }, 400);
+      return;
+    }
+    const t = now / 1000;
+    let target = this.peelHover ? 120 : 72 + 12 * Math.sin((t * 2 * Math.PI) / 3.6);
+    const since = (now - this.hintAt) / 1000;
+    if (since >= 0 && since < 1.6) target += 60 * Math.sin(Math.min(1, since / 0.5) * Math.PI * 0.5) * Math.exp(-since * 2.2);
+    this.peel += (target - this.peel) * 0.12;
+    const C = this.corner(f);
+    f.P = this.constrain(f, { x: C.x - this.peel, y: C.y - this.peel * 0.72 });
+    this.render();
+    this.idleRaf = requestAnimationFrame(this.idleTick);
+  };
+
+  /** Hand the resting corner over to a real turn: it keeps its position, it just stops breathing. */
+  private takeIdle(): Flip | null {
+    const f = this.flip;
+    if (!f?.idle) return null;
+    cancelAnimationFrame(this.idleRaf);
+    this.idleRaf = 0;
+    f.idle = false;
+    return f;
+  }
+
+  /** Drop the resting corner straight away (only used before a jump to another month). */
+  private stopIdle(): void {
+    if (this.takeIdle()) this.finishFlip(false);
   }
 
   private request(dir: 1 | -1, fast = false): void {
-    this.stopHint();
-    if (this.flip) {
+    const f = this.flip;
+    if (f && !f.idle) {
       this.queue.push(dir);
       return;
     }
     if (!this.canFlip(dir)) return;
+    const ms = fast ? RIFFLE_MS : FLIP_MS;
+    const ease = fast ? easeOut : easeInOut;
+    if (f?.idle) {
+      this.takeIdle();
+      if (dir > 0) {
+        // Keep pulling the corner that is already peeled back
+        this.renderTabs(this.m + 2 * dir);
+        this.animateTo(true, ms, ease);
+        return;
+      }
+      // Turning back: let the peeled corner settle down first, then turn the left page
+      this.animateTo(false, 160, easeOut);
+      this.queue.unshift(-1);
+      this.slowNext = !fast;
+      return;
+    }
     this.beginFlip(dir, false);
     this.renderTabs(this.m + 2 * dir);
-    this.animateTo(true, fast ? RIFFLE_MS : FLIP_MS, fast ? easeOut : easeInOut);
+    this.animateTo(true, ms, ease);
   }
 
   /** Set a page (calendar element) to a month; if it already shows that month, leave it alone (keeping any hand-drawn strokes). */
@@ -680,12 +710,16 @@ export class HighlighterBook extends HTMLElement {
     while (this.queue.length) {
       const dir = this.queue.shift()!;
       if (this.canFlip(dir)) {
+        const slow = this.slowNext;
+        this.slowNext = false;
         this.beginFlip(dir, false);
         this.renderTabs(this.m + 2 * dir);
-        this.animateTo(true, RIFFLE_MS, this.queue.length ? (x) => x : easeOut);
+        this.animateTo(true, slow ? FLIP_MS : RIFFLE_MS, slow ? easeInOut : this.queue.length ? (x) => x : easeOut);
         return;
       }
     }
+    this.slowNext = false;
+    this.rest();
   };
 
   /**
@@ -903,7 +937,7 @@ export class HighlighterBook extends HTMLElement {
 
   /** Turn until month k is on the left or right page (flipping quickly page after page). */
   private goTo(k: number): void {
-    if (this.flip) return;
+    if (this.flip && !this.flip.idle) return;
     const n = k < this.m ? -Math.ceil((this.m - k) / 2) : k > this.m + 1 ? Math.ceil((k - this.m - 1) / 2) : 0;
     if (!n) return;
     const dir: 1 | -1 = n > 0 ? 1 : -1;
@@ -920,12 +954,12 @@ export class HighlighterBook extends HTMLElement {
   }
 
   private selectionChanged(): void {
-    if (!this.flip) this.renderTabs();
+    if (!this.flip || this.flip.idle) this.renderTabs();
   }
 
   /** A page changed its own month (keyboard moved out of the month): restore that page and turn one page instead of jumping. */
   private onPageMonth(c: HighlighterCalendar): void {
-    if (this.flip) return;
+    if (this.flip && !this.flip.idle) return;
     const k = parseKey(c.month);
     if (k === null) return;
     const isLeft = c.parentElement === this.holder(this.$left);
@@ -949,7 +983,15 @@ export class HighlighterBook extends HTMLElement {
 
   private onDown(e: PointerEvent): void {
     if (this.gesture || (e.pointerType === 'mouse' && e.button !== 0) || !this.isBlank(e)) return;
-    this.gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, mode: 'idle', samples: [{ t: e.timeStamp, x: e.clientX }] };
+    this.gesture = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      t: e.timeStamp,
+      mode: 'idle',
+      samples: [{ t: e.timeStamp, x: e.clientX }],
+      origin: { x: 0, y: 0 },
+    };
     try {
       this.$book.setPointerCapture(e.pointerId);
     } catch {
@@ -958,8 +1000,23 @@ export class HighlighterBook extends HTMLElement {
   }
 
   private onMove(e: PointerEvent): void {
+    // Pointing near the resting corner peels it back further, inviting a pull
+    if (!this.gesture && this.flip?.idle) {
+      const r = this.$right.getBoundingClientRect();
+      this.peelHover = Math.hypot(r.right - e.clientX, r.bottom - e.clientY) < 110;
+    }
     const g = this.gesture;
     if (!g || g.id !== e.pointerId) return;
+    if (g.mode === 'wait') {
+      // The peeled corner has settled: now lift the left page from where the finger is
+      if (this.flip) return;
+      const r = this.$spread.getBoundingClientRect();
+      this.beginFlip(-1, e.clientY < r.top + r.height / 2);
+      g.origin = this.corner(this.flip!);
+      g.x = e.clientX;
+      g.y = e.clientY;
+      g.mode = 'drag';
+    }
     const dx = e.clientX - g.x;
     const dy = e.clientY - g.y;
     g.samples.push({ t: e.timeStamp, x: e.clientX });
@@ -972,8 +1029,7 @@ export class HighlighterBook extends HTMLElement {
         return;
       }
       const dir: 1 | -1 = dx < 0 ? 1 : -1;
-      this.stopHint();
-      if (this.flip) {
+      if (this.flip && !this.flip.idle) {
         // The previous page is still turning: this counts as "turn one more page"
         g.mode = 'flick';
         this.queue.push(dir);
@@ -983,25 +1039,112 @@ export class HighlighterBook extends HTMLElement {
         g.mode = 'scroll';
         return;
       }
-      g.mode = 'drag';
-      // Pressing on the top half of the page lifts the top corner, the bottom half lifts the bottom corner
-      const r = this.$spread.getBoundingClientRect();
-      this.beginFlip(dir, g.y < r.top + r.height / 2);
+      const idle = this.takeIdle();
+      if (idle && dir > 0) {
+        // Pull the corner that is already peeled back; the paper stays one continuous sheet
+        g.mode = 'drag';
+        g.origin = { ...idle.P };
+      } else if (idle) {
+        // Turning back: let the peeled corner settle first, then the left page follows the finger
+        g.mode = 'wait';
+        this.animateTo(false, 140, easeOut);
+        return;
+      } else {
+        g.mode = 'drag';
+        // Pressing on the top half of the page lifts the top corner, the bottom half lifts the bottom corner
+        const r = this.$spread.getBoundingClientRect();
+        this.beginFlip(dir, g.y < r.top + r.height / 2);
+        g.origin = this.corner(this.flip!);
+      }
     }
     if (g.mode !== 'drag' || !this.flip) return;
     // The corner follows the finger (by how far the finger has moved, wherever it was pressed)
     const f = this.flip;
-    const C = this.corner(f);
     const mdx = f.dir > 0 ? dx : -dx;
-    f.P = this.constrain(f, { x: C.x + mdx * 1.1, y: C.y + dy * 0.6 });
+    f.P = this.constrain(f, { x: g.origin.x + mdx * 1.1, y: g.origin.y + dy * 0.6 });
     this.render();
+  }
+
+  /**
+   * Trackpad two-finger swipe (Mac): sideways wheel events drive the page exactly like a drag, following the fingers
+   * and momentum; when the events stop, the page turns or falls back, as with letting go.
+   */
+  private onWheel(e: WheelEvent): void {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    const now = performance.now();
+    const step = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    let w = this.wheel;
+    if (!w) {
+      // Swallow the momentum tail of the previous swipe
+      if (now < this.wheelLock) {
+        this.wheelLock = now + 160;
+        return;
+      }
+      if ((this.flip && !this.flip.idle) || this.gesture) return;
+      const dir: 1 | -1 = e.deltaX > 0 ? 1 : -1;
+      if (!this.canFlip(dir)) {
+        this.wheelLock = now + 300;
+        return;
+      }
+      const idle = this.takeIdle();
+      let origin: Pt = { x: 0, y: 0 };
+      let wait = false;
+      if (idle && dir > 0) origin = { ...idle.P };
+      else if (idle) {
+        wait = true;
+        this.animateTo(false, 140, easeOut);
+      } else {
+        this.beginFlip(dir, false);
+        origin = this.corner(this.flip!);
+      }
+      w = this.wheel = { dir, dx: 0, origin, wait, samples: [], timer: 0 };
+    }
+    if (w.wait && !this.flip) {
+      this.beginFlip(w.dir, false);
+      w.origin = this.corner(this.flip!);
+      w.wait = false;
+      w.dx = 0;
+    }
+    w.dx -= e.deltaX * step;
+    w.samples.push({ t: now, x: w.dx });
+    while (w.samples.length > 2 && now - w.samples[0].t > 100) w.samples.shift();
+    if (!w.wait && this.flip && !this.flip.anim) {
+      const mdx = w.dir > 0 ? w.dx : -w.dx;
+      this.flip.P = this.constrain(this.flip, { x: w.origin.x + mdx * 1.1, y: w.origin.y - Math.min(40, Math.abs(mdx) * 0.15) });
+      this.render();
+    }
+    clearTimeout(w.timer);
+    w.timer = window.setTimeout(() => this.endWheel(), 140);
+  }
+
+  private endWheel(): void {
+    const w = this.wheel;
+    this.wheel = null;
+    this.wheelLock = performance.now() + 350;
+    const f = this.flip;
+    if (!w || w.wait || !f || f.anim) {
+      if (!this.flip) this.rest();
+      return;
+    }
+    const s0 = w.samples[0];
+    const s1 = w.samples[w.samples.length - 1];
+    const vx = s0 && s1 && s1.t > s0.t ? (s1.x - s0.x) / (s1.t - s0.t) : 0;
+    const along = f.dir > 0 ? -vx : vx;
+    const p = this.progress(f);
+    const go = (p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
+    if (go) this.renderTabs(this.m + 2 * f.dir);
+    this.animateTo(go, Math.max(180, FLIP_MS * 0.75 * (go ? 1 - p : p)), easeOut);
   }
 
   private onUp(e: PointerEvent, cancelled: boolean): void {
     const g = this.gesture;
     if (!g || g.id !== e.pointerId) return;
     this.gesture = null;
-    if (g.mode !== 'drag' || !this.flip) return;
+    if (g.mode !== 'drag' || !this.flip) {
+      if (!this.flip) this.rest();
+      return;
+    }
     const s0 = g.samples[0];
     const vx = e.timeStamp > s0.t ? (e.clientX - s0.x) / (e.timeStamp - s0.t) : 0;
     const f = this.flip;

@@ -30,7 +30,7 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 ## The paper calendar: `<highlighter-book>`
 
 - Two months are always open, one per page. Each sheet is printed on both sides, like a real book.
-- **Turn pages** by dragging on any blank area (outside the date grid): drag left and the right page peels up from its corner and follows your finger; drag right to turn back. Drag past about a third, or flick, and it turns; otherwise it settles back. Swipe quickly several times and it riffles through pages. The dog-eared corners can be clicked too.
+- **Turn pages** by dragging on any blank area (outside the date grid), or with a two-finger sideways swipe on a trackpad: drag left and the right page peels up from its corner and follows your finger; drag right to turn back. Drag past about a third, or flick, and it turns; otherwise it settles back. Swipe quickly several times and it riffles through pages. The right page's bottom corner rests slightly peeled back and gently breathing; it is the real sheet, so clicking or pulling it continues the same curl into a full turn.
 - **Bookmarks** replace any kind of glow. Every month with selected days gets a bookmark tab on the fore-edge, placed at a height that depends on the month, showing how many days you picked there (1 to 5+). Months you have already turned past sit on the left, months ahead sit on the right. Click a tab to turn straight to that month, and the tab slides into the page as a hanging ribbon.
 - Past months are printed with a soft vignette.
 - Everything animates. Nothing jumps.
