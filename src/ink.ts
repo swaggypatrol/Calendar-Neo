@@ -64,6 +64,23 @@ function noise(x: number, seed: number): number {
   return hash(i + seed) * (1 - u) + hash(i + 1 + seed) * u;
 }
 
+/** Any CSS colour as rgba() with the given alpha (via a scratch canvas, so names and hex both work). */
+const colorCtx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+function rgba(color: string, a: number): string {
+  if (!colorCtx) return color;
+  colorCtx.fillStyle = '#000';
+  colorCtx.fillStyle = color;
+  const c = String(colorCtx.fillStyle);
+  if (c.startsWith('#')) {
+    const n = parseInt(c.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+  }
+  const m = /rgba?\(([^)]+)\)/.exec(c);
+  if (!m) return c;
+  const [r, g, b] = m[1].split(',').map((v) => v.trim());
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 let seedCounter = 1;
 
 /** A single pass: a series of points plus a set of bristles. */
@@ -553,13 +570,8 @@ export class InkCanvas {
     const d = ctx2d(this.display);
     d.setTransform(1, 0, 0, 1, 0, 0);
     d.clearRect(0, 0, this.pw, this.ph);
-    d.globalAlpha = MAX_DEPTH;
-    d.drawImage(this.comp, 0, 0);
-    if (this.boost) d.drawImage(this.comp, 0, 0);
-    for (const g of this.ghosts) {
-      d.globalAlpha = MAX_DEPTH * Math.max(0, g.alpha) ** 1.5;
-      d.drawImage(g.canvas, 0, 0);
-    }
+    this.drawInk(d, this.comp, 1);
+    for (const g of this.ghosts) this.drawInk(d, g.canvas, Math.max(0, g.alpha) ** 1.5);
     d.globalAlpha = 1;
     if (this.blocked.length) {
       d.save();
@@ -574,6 +586,41 @@ export class InkCanvas {
   }
 
   /** Commit a stroke into the ink layer. With under=true it goes beneath the existing ink. */
+  /**
+   * Put an ink layer on screen. On light paper it is simply translucent. On dark paper (boost) it is drawn
+   * like real fluorescent ink: a soft bloom of light spilling around the strokes, the ink itself, then a
+   * screen-blended pass that makes the colour look lit from within, and a faint white-hot core.
+   */
+  private drawInk(d: CanvasRenderingContext2D, src: HTMLCanvasElement, fade: number): void {
+    if (fade <= 0) return;
+    if (!this.boost) {
+      d.globalAlpha = MAX_DEPTH * fade;
+      d.drawImage(src, 0, 0);
+      return;
+    }
+    const k = this.dpr;
+    d.save();
+    // Bloom: the glow around the strokes, wide and soft, then a tighter halo
+    d.shadowColor = rgba(this.color, 0.55 * fade);
+    d.shadowBlur = 22 * k;
+    d.globalAlpha = 0.9 * fade;
+    d.drawImage(src, 0, 0);
+    d.shadowColor = rgba(this.color, 0.7 * fade);
+    d.shadowBlur = 7 * k;
+    d.drawImage(src, 0, 0);
+    d.shadowBlur = 0;
+    d.shadowColor = 'transparent';
+    // Luminous body: screen-blending the ink over itself lifts it towards light instead of making it muddy
+    d.globalCompositeOperation = 'screen';
+    d.globalAlpha = 0.65 * fade;
+    d.drawImage(src, 0, 0);
+    // White-hot core where the ink is densest
+    d.globalCompositeOperation = 'lighter';
+    d.globalAlpha = 0.12 * fade;
+    d.drawImage(src, 0, 0);
+    d.restore();
+  }
+
   private commit(stroke: BrushStroke, under = false): void {
     this.clearLayer(this.scratch);
     const s = ctx2d(this.scratch);

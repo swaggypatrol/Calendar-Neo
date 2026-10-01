@@ -112,8 +112,8 @@ header {
 .weekdays span { text-align: center; font-size: 0.72rem; color: var(--hc-muted); }
 .wrap {
   position: relative;
-  margin: -8px;
-  padding: 8px;
+  margin: -14px;
+  padding: 14px;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
