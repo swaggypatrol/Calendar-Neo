@@ -310,6 +310,7 @@ highlighter-calendar {
   clip-path: polygon(0 0, 0 0, 0 0);
 }
 .spine.over .tool { pointer-events: none; }
+.spine.over .tools { position: absolute; inset: 0; }
 .tool {
   position: absolute;
   left: 50%;
@@ -544,8 +545,7 @@ export class HighlighterBook extends HTMLElement {
   /** The spine (pen, eraser and coil) drawn again above a turning sheet, wherever they stand higher than it as it lands. */
   private $spineOver: HTMLElement;
   private $overCoil: HTMLElement;
-  private $overPen: HTMLElement;
-  private $overEraser: HTMLElement;
+  private $overTools: HTMLElement;
   /** The highlighter and the eraser pushed into the coil: pick one up to switch tools. */
   private $pen: HTMLButtonElement;
   private $eraser: HTMLButtonElement;
@@ -596,8 +596,10 @@ export class HighlighterBook extends HTMLElement {
             <div class="coil"></div>
           </div>
           <div class="spine over" aria-hidden="true">
-            <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
-            <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
+            <div class="tools">
+              <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
+              <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
+            </div>
             <div class="coil"></div>
           </div>
         </div>
@@ -617,8 +619,7 @@ export class HighlighterBook extends HTMLElement {
     this.$next = q('.corner.next');
     this.$spineOver = q('.spine.over');
     this.$overCoil = q('.spine.over .coil');
-    this.$overPen = q('.spine.over .pen');
-    this.$overEraser = q('.spine.over .eraser');
+    this.$overTools = q('.spine.over .tools');
     this.$pen = q('.tool.pen');
     this.$eraser = q('.tool.eraser');
     this.$pen.addEventListener('click', () => this.pickTool('highlight'));
@@ -1355,44 +1356,62 @@ export class HighlighterBook extends HTMLElement {
     // anything, the higher one simply covers the lower. The coil's wire arches over the spine, highest along the middle;
     // the pen and eraser lie inside it, lower down. The flap's paper over a point of the spine belongs to the sheet at
     // some distance d from the binding, and with the sheet tilted at φ off the page it is landing on, that paper is
-    // d·sin φ above it. Up in the air the sheet is far above everything and covers it; as it comes down, the top of the
-    // coil's arch comes through first, then the arch widens out to the holes and the pen and eraser appear under it,
-    // until the sheet lies flat with the coil running through its holes
-    const p0 = this.progress(f);
-    const lean = Math.sin(Math.PI * (1 - p0));
-    const above = (x: number) => reflect({ x, y: H / 2 }).x * lean;
+    // d·sin φ above it. φ comes from how far the corner still is from where it will land, sideways and up alike, so a
+    // page held up in the air stays above everything however far across it has been carried. Up in the air the sheet
+    // covers it all; as it comes down, the top of the coil's arch comes through first, then the arch widens out to the
+    // holes and the pen and eraser appear under it, until the sheet lies flat with the coil running through its holes.
+    // Worked out slice by slice down the spine, because a tilted sheet is low near its binding and high further off
+    const land = { x: -C.x, y: C.y };
+    const lean = Math.sin(Math.PI * Math.min(0.5, len(sub(P, land)) / (2 * C.x)));
     const wire = (x: number) => (Math.abs(x) >= COIL / 2 ? -1 : 20 * Math.sqrt(1 - ((2 * x) / COIL) ** 2));
     const tool = (x: number) => (Math.abs(x) >= PEN_D / 2 ? -1 : 7 + Math.sqrt((PEN_D / 2) ** 2 - x * x));
-    // The stretch of the spine where a thing stands higher than the sheet (it rises to a single peak, so one interval)
-    const span = (h: (x: number) => number): [number, number] | null => {
-      let lo = Infinity;
-      let hi = -Infinity;
-      for (let x = -28; x <= 28; x += 0.5) {
-        if (h(x) > above(x)) {
-          lo = Math.min(lo, x);
-          hi = Math.max(hi, x);
+    // The outline of where a thing stands higher than the paper over it, between y0 and y1, in the spine's coordinates
+    // (shifted down by dy for an element that starts lower): one shape per stretch, so there is never a zero-width seam
+    const outline = (h: (x: number) => number, y0: number, y1: number, dy: number): string => {
+      const n = Math.max(2, Math.ceil((y1 - y0) / 4));
+      const half = (y1 - y0) / n / 2;
+      const runs: { l: Pt[]; r: Pt[] }[] = [];
+      let run: { l: Pt[]; r: Pt[] } | null = null;
+      for (let i = 0; i <= n; i++) {
+        const y = y0 + ((y1 - y0) * i) / n;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let x = -28; x <= 28; x += 0.5) {
+          if (h(x) > reflect({ x, y }).x * lean) {
+            if (x < lo) lo = x;
+            if (x > hi) hi = x;
+          }
         }
+        if (lo > hi) {
+          run = null;
+          continue;
+        }
+        if (!run) runs.push((run = { l: [], r: [] }));
+        const a = sx(lo) - (X0 - 28);
+        const b = sx(hi) - (X0 - 28);
+        run.l.push({ x: Math.min(a, b) - 0.25, y: y + dy });
+        run.r.push({ x: Math.max(a, b) + 0.25, y: y + dy });
       }
-      return lo <= hi ? [lo - 0.25, hi + 0.25] : null;
-    };
-    // As a clip for an element of the spine whose left edge is at `left` in the spine's own coordinates
-    const strip = (r: [number, number] | null, left: number) => {
-      if (!r) return polyCss([]);
-      const a = sx(r[0]) - (X0 - 28) - left;
-      const b = sx(r[1]) - (X0 - 28) - left;
-      const l = Math.min(a, b).toFixed(2);
-      const rr = Math.max(a, b).toFixed(2);
-      return `polygon(${l}px -2000px, ${rr}px -2000px, ${rr}px 2000px, ${l}px 2000px)`;
+      if (!runs.length) return polyCss([]);
+      const shapes = runs.map(({ l, r }) => {
+        // A stretch only one slice tall still gets that slice's height
+        if (l.length === 1) {
+          l = [{ x: l[0].x, y: l[0].y - half }, { x: l[0].x, y: l[0].y + half }];
+          r = [{ x: r[0].x, y: r[0].y - half }, { x: r[0].x, y: r[0].y + half }];
+        }
+        return `M${[...l, ...r.reverse()].map((q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join('L')}Z`;
+      });
+      return `path('${shapes.join('')}')`;
     };
     // Only where the flap actually is: everywhere else the spine is drawn above the pages as usual
     this.$spineOver.style.clipPath = polyCss(fold.map((q) => {
       const r = reflect(q);
       return { x: sx(r.x) - (X0 - 28), y: r.y + ROOM_TOP };
     }));
-    this.$overCoil.style.clipPath = strip(span(wire), 0);
-    const tools = strip(span(tool), 28 - PEN_D / 2);
-    this.$overPen.style.clipPath = tools;
-    this.$overEraser.style.clipPath = strip(span(tool), 28 - ERASER_D / 2);
+    // (The flap is nowhere near the spine for most of a turn, and all the time the corner rests: nothing to work out)
+    const nearSpine = fold.some((q) => reflect(q).x < 28);
+    this.$overCoil.style.clipPath = nearSpine ? outline(wire, 0, H, 0) : polyCss([]);
+    this.$overTools.style.clipPath = nearSpine ? outline(tool, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP) : polyCss([]);
 
     // Two points on the fold line (mirrored coordinates)
     const along = { x: -n.y, y: n.x };
