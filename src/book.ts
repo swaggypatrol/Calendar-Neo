@@ -256,7 +256,7 @@ const STYLE = /* css */ `
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  z-index: 6;
 }
 .turn.front { z-index: 4; }
 /* The folded-over flap is something to grab, not to draw on */
@@ -274,8 +274,9 @@ highlighter-calendar {
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
 }
-/* The spine: the gap between the pages, the coil over it, and the highlighter and eraser pushed into the coil. It sits above
-   every sheet, including one that is turning: the sheets hang on the coil and swing round underneath it */
+/* The spine: the gap between the pages, the coil over it, and the highlighter and eraser pushed into the coil. The coil
+   runs through the holes of every sheet lying open, so it is drawn over them; a sheet lifted to turn rises above it all and
+   covers the coil, the pen and the eraser, except along its own punched edge, which stays threaded on the coil */
 .spine {
   position: absolute;
   left: 50%;
@@ -283,7 +284,7 @@ highlighter-calendar {
   margin-left: -28px;
   top: -${ROOM_TOP}px;
   bottom: -${ROOM_BOTTOM}px;
-  z-index: 7;
+  z-index: 5;
   pointer-events: none;
 }
 .hollow {
@@ -303,6 +304,12 @@ highlighter-calendar {
   bottom: ${ROOM_BOTTOM}px;
   background: var(--hb-coil) 50% 0 / 44px var(--hb-pitch) repeat-y;
 }
+/* The same pen, eraser and coil again, above the turning sheet: they show through it while it settles onto the other page */
+.spine.over {
+  z-index: 7;
+  clip-path: polygon(0 0, 0 0, 0 0);
+}
+.spine.over .tool { pointer-events: none; }
 .tool {
   position: absolute;
   left: 50%;
@@ -389,7 +396,7 @@ highlighter-calendar {
   padding: 0;
   background: transparent;
   cursor: pointer;
-  z-index: 6;
+  z-index: 8;
 }
 .corner.next { right: ${PAD_X}px; }
 .corner.prev { left: ${PAD_X}px; }
@@ -398,7 +405,7 @@ highlighter-calendar {
    its page is open it slides into the page and becomes a swallowtail ribbon hanging from the top. Every change is animated; nothing jumps */
 .mark {
   position: absolute;
-  z-index: 6;
+  z-index: 7;
   box-sizing: border-box;
   border: 0;
   padding: 0;
@@ -418,18 +425,8 @@ highlighter-calendar {
 .mark.edge-r:hover { translate: 3px 0; }
 .mark.edge-l:hover { translate: -3px 0; }
 .mark.gone { opacity: 0; pointer-events: none; }
-/* Crossing to the other side with its sheet: out, then (while it can't be seen) straight to its new place, then back in */
-.mark.hop {
-  animation: mark-hop 0.7s ease;
-  transition:
-    left 0s 0.3s, top 0s 0.3s, width 0s 0.3s, height 0s 0.3s, padding 0s 0.3s, border-radius 0s 0.3s, clip-path 0s 0.3s,
-    box-shadow 0.6s, opacity 0.35s, translate 0.15s;
-}
-@keyframes mark-hop {
-  0% { opacity: 1; }
-  40%, 60% { opacity: 0; }
-  100% { opacity: 1; }
-}
+/* Out of sight while a page turns: its sheet is turning over or about to be covered. It comes back where it belongs once the page lies flat */
+.mark.away { opacity: 0; pointer-events: none; }
 `;
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max', 'theme'];
@@ -456,6 +453,8 @@ interface Motion {
   accel: number;
   /** Length of the path in px, to judge the landing in pixels. */
   dist: number;
+  /** The page is within a few pixels of lying flat: the bookmarks have been put back. */
+  landed?: boolean;
   /**
    * What happens on arrival: the page has turned, it has fallen back flat, it has settled into the resting curl, or the
    * resting corner has dropped flat to make way for turning the left page back.
@@ -540,6 +539,8 @@ export class HighlighterBook extends HTMLElement {
   private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
+  /** The spine (pen, eraser and coil) drawn again above a turning sheet, showing through it as it settles onto the other page. */
+  private $spineOver: HTMLElement;
   /** The highlighter and the eraser pushed into the coil: pick one up to switch tools. */
   private $pen: HTMLButtonElement;
   private $eraser: HTMLButtonElement;
@@ -589,6 +590,11 @@ export class HighlighterBook extends HTMLElement {
             <button class="tool eraser" type="button" part="eraser" title="Eraser" aria-label="Eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></button>
             <div class="coil"></div>
           </div>
+          <div class="spine over" aria-hidden="true">
+            <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
+            <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
+            <div class="coil"></div>
+          </div>
         </div>
         <button class="corner prev" type="button" aria-label="Previous page"></button>
         <button class="corner next" type="button" aria-label="Next page"></button>
@@ -604,6 +610,7 @@ export class HighlighterBook extends HTMLElement {
     this.$pool = q('.pool');
     this.$prev = q('.corner.prev');
     this.$next = q('.corner.next');
+    this.$spineOver = q('.spine.over');
     this.$pen = q('.tool.pen');
     this.$eraser = q('.tool.eraser');
     this.$pen.addEventListener('click', () => this.pickTool('highlight'));
@@ -788,8 +795,8 @@ export class HighlighterBook extends HTMLElement {
   /** The tool in use is drawn a little further out of the coil, the other one pushed back in. */
   private syncTools(): void {
     const erase = this.tool === 'erase';
-    this.$pen.classList.toggle('on', !erase);
-    this.$eraser.classList.toggle('on', erase);
+    for (const el of this.shadowRoot!.querySelectorAll('.pen')) el.classList.toggle('on', !erase);
+    for (const el of this.shadowRoot!.querySelectorAll('.eraser')) el.classList.toggle('on', erase);
     this.$pen.setAttribute('aria-pressed', String(!erase));
     this.$eraser.setAttribute('aria-pressed', String(erase));
   }
@@ -983,7 +990,7 @@ export class HighlighterBook extends HTMLElement {
       this.takeIdle();
       if (dir > 0) {
         // Keep pulling the corner that is already peeled back
-        this.renderTabs(this.m + 2);
+        this.renderTabs(this.m + 2, false, true);
         if (riffle) {
           this.move('turn', { speed: RIFFLE_SPEED, accel: RIFFLE_ACCEL, v0: 0 });
           this.prefetch(1);
@@ -997,7 +1004,7 @@ export class HighlighterBook extends HTMLElement {
       return;
     }
     this.beginFlip(dir, false);
-    this.renderTabs(this.m + 2 * dir);
+    this.renderTabs(this.m + 2 * dir, false, true);
     if (riffle) {
       this.move('turn', { speed: RIFFLE_SPEED, accel: RIFFLE_ACCEL, v0: 0 });
       this.prefetch(dir);
@@ -1106,6 +1113,7 @@ export class HighlighterBook extends HTMLElement {
       }
     }
     this.flip = null;
+    this.$spineOver.style.clipPath = polyCss([]);
     this.$left.classList.remove('under');
     this.$right.classList.remove('under');
     this.$spread.classList.remove('flip-on');
@@ -1211,6 +1219,11 @@ export class HighlighterBook extends HTMLElement {
     }
     // Settling into the resting curl: aim at where the breathing corner is now, so it is caught up exactly, not left to drift after
     if (m.kind === 'rest') m.to = this.restPoint(f);
+    // A turned page that is all but flat (and the last of a riffle): the bookmarks come back now, not after the spring's last fraction of a pixel
+    if (m.kind === 'turn' && !m.landed && !this.queue.length && (1 - m.s) * m.dist < 4) {
+      m.landed = true;
+      this.renderTabs(this.m + 2 * f.dir);
+    }
     const arrived =
       m.speed > 0 ? m.s >= 1 : m.s >= 1 || (Math.abs(1 - m.s) * m.dist < LAND_PX && Math.abs(m.v) * m.dist < LAND_PX_S);
     f.P = this.constrain(f, this.pathPoint(m, arrived ? 1 : m.s));
@@ -1229,7 +1242,7 @@ export class HighlighterBook extends HTMLElement {
       const dir = this.queue[0];
       if (dir > 0) {
         this.queue.shift();
-        this.renderTabs(this.m + 2);
+        this.renderTabs(this.m + 2, false, true);
         this.move('turn');
         return;
       }
@@ -1237,7 +1250,8 @@ export class HighlighterBook extends HTMLElement {
         this.clearCorner();
         return;
       }
-      // Settled into the resting curl: carry on breathing from exactly here
+      // Settled into the resting curl: carry on breathing from exactly here, and any bookmarks hidden for the turn come back
+      this.renderTabs();
       f.idle = true;
       this.peel = this.corner(f).x - f.P.x;
       this.peelV = 0;
@@ -1253,7 +1267,7 @@ export class HighlighterBook extends HTMLElement {
       const slow = this.slowNext;
       this.slowNext = false;
       this.beginFlip(dir, false);
-      this.renderTabs(this.m + 2 * dir);
+      this.renderTabs(this.m + 2 * dir, false, true);
       if (!slow && this.queue.length) {
         this.move('turn', { speed: RIFFLE_SPEED, v0: carry, accel: RIFFLE_ACCEL });
         this.prefetch(dir);
@@ -1295,6 +1309,7 @@ export class HighlighterBook extends HTMLElement {
       // Not lifted (yet / any more): the sheet lies flat
       this.$front.style.clipPath = '';
       this.$back.style.clipPath = polyCss([]);
+      this.$spineOver.style.clipPath = polyCss([]);
       (this.$back.parentElement as HTMLElement).style.filter = '';
       for (const st of this.shadowRoot!.querySelectorAll<HTMLElement>('.strip')) st.style.visibility = 'hidden';
       return;
@@ -1327,6 +1342,20 @@ export class HighlighterBook extends HTMLElement {
     this.$back.style.transform = `matrix(${ex.x}, ${ex.y}, ${ey.x}, ${ey.y}, ${o.x - bl}, ${o.y})`;
     const toBack = (q: Pt): Pt => ({ x: sx(-q.x) - bl, y: q.y });
     this.$back.style.clipPath = polyCss(fold.map(toBack));
+
+    // The sheet lifted off the page is drawn above the coil, the pen and the eraser, so while it swings over it covers
+    // them. As it comes down onto the other page it settles back under the coil that runs through its holes (and so under
+    // the pen and eraser inside it): over the last stretch of the turn they show through it again, gradually, so nothing
+    // pops into view when the page lands
+    const p0 = this.progress(f);
+    const settle = clamp01((p0 - 0.9) / 0.085);
+    this.$spineOver.style.opacity = (settle * settle * (3 - 2 * settle)).toFixed(3);
+    this.$spineOver.style.clipPath = settle > 0
+      ? polyCss(fold.map((q) => {
+          const r = reflect(q);
+          return { x: sx(r.x) - (X0 - 28), y: r.y + ROOM_TOP };
+        }))
+      : polyCss([]);
 
     // Two points on the fold line (mirrored coordinates)
     const along = { x: -n.y, y: n.x };
@@ -1402,10 +1431,13 @@ export class HighlighterBook extends HTMLElement {
 
   /**
    * Bookmarks: one for each month with selected days, showing how many days are selected (1 to 5+). With m on the left page:
-   * months on the two open pages get a ribbon tucked into the page, months already turned sit on the left fore-edge, months not yet reached on the right,
-   * each at a different height per month. Changes of position or shape always transition smoothly.
+   * months on the two open pages get a ribbon tucked into the page, months already turned sit on the left fore-edge, months not yet reached on the right.
+   *
+   * turning: a page has started turning towards a spread with m on the left. Bookmarks whose sheet turns over, or gets
+   * covered, fade out now and reappear in their new places when the page lies flat (the next call without turning); a
+   * bookmark of a page being uncovered stays put and then slides into it. Nothing ever moves across a turning page.
    */
-  private renderTabs(m = this.m, instant = false): void {
+  private renderTabs(m = this.m, instant = false, turning = false): void {
     const counts = new Map<number, number>();
     for (const d of this.selection) {
       const k = monthIndex(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1);
@@ -1431,7 +1463,6 @@ export class HighlighterBook extends HTMLElement {
         const mark = document.createElement('button');
         mark.type = 'button';
         mark.className = 'mark gone';
-        mark.addEventListener('animationend', () => mark.classList.remove('hop'));
         mark.addEventListener('click', () => {
           if (!mark.classList.contains('ribbon')) this.goTo(k);
         });
@@ -1480,17 +1511,16 @@ export class HighlighterBook extends HTMLElement {
           right,
         };
       }
-      // A bookmark whose sheet swings over the coil to the other side doesn't slide across the open pages: it fades out
-      // and comes back on its new side (and if it was already on its way, it starts that again rather than jumping)
-      const side = g.right ? 'r' : 'l';
-      const moved = st.left !== g.left || st.top !== g.top;
-      if (!fresh && !instant && moved && (el.dataset.side !== side || el.classList.contains('hop'))) {
-        el.classList.remove('hop');
-        void el.offsetWidth;
-        el.classList.add('hop');
+      if (turning && !fresh) {
+        const same = st.left === g.left && st.top === g.top && st.width === g.width;
+        // A tab on the fore-edge whose page is being uncovered (on the same side) slides into it once it lies flat
+        const uncovered = ribbon && !el.classList.contains('ribbon') && el.classList.contains(g.right ? 'edge-r' : 'edge-l');
+        if (!same && !uncovered) el.classList.add('away');
+        continue;
       }
-      el.dataset.side = side;
-      if (fresh || instant) st.transition = 'none';
+      // Back after a turn: put it in its new place unseen, then fade it in
+      const back = el.classList.contains('away');
+      if (fresh || instant || back) st.transition = 'none';
       st.left = g.left;
       st.top = g.top;
       st.width = g.width;
@@ -1502,6 +1532,11 @@ export class HighlighterBook extends HTMLElement {
       el.classList.toggle('edge-r', !ribbon && g.right);
       el.classList.toggle('edge-l', !ribbon && !g.right);
       el.tabIndex = ribbon ? -1 : 0;
+      if (back) {
+        void el.offsetWidth;
+        st.transition = '';
+        el.classList.remove('away');
+      }
       if (fresh || instant) {
         // A new bookmark (or the whole book jumped to another month): place it first, then fade it in
         void el.offsetWidth;
@@ -1597,6 +1632,7 @@ export class HighlighterBook extends HTMLElement {
       if (this.flip) return;
       const r = this.$spread.getBoundingClientRect();
       this.beginFlip(-1, e.clientY < r.top + r.height / 2);
+      this.renderTabs(this.m - 2, false, true);
       g.origin = this.corner(this.flip!);
       g.pre = Math.max(0, e.clientX - g.x);
       g.x = e.clientX;
@@ -1635,6 +1671,7 @@ export class HighlighterBook extends HTMLElement {
         this.slowNext = false;
         g.mode = 'drag';
         g.origin = { ...moving.P };
+        this.renderTabs(this.m + 2 * moving.dir, false, true);
         g.x = e.clientX;
         g.y = e.clientY;
         return;
@@ -1649,6 +1686,7 @@ export class HighlighterBook extends HTMLElement {
         // Pull the corner that is already peeled back; the paper stays one continuous sheet
         g.mode = 'drag';
         g.origin = { ...idle.P };
+        this.renderTabs(this.m + 2, false, true);
       } else if (idle) {
         // Turning back: the peeled corner gets out of the way first, then the left page follows the finger
         g.mode = 'wait';
@@ -1659,6 +1697,7 @@ export class HighlighterBook extends HTMLElement {
         // Pressing on the top half of the page lifts the top corner, the bottom half lifts the bottom corner
         const r = this.$spread.getBoundingClientRect();
         this.beginFlip(dir, g.y < r.top + r.height / 2);
+        this.renderTabs(this.m + 2 * dir, false, true);
         g.origin = this.corner(this.flip!);
       }
       // Follow the finger from here on, so the sheet doesn't jump by the few pixels it took to recognise the drag
@@ -1723,8 +1762,8 @@ export class HighlighterBook extends HTMLElement {
     const go = allowTurn && (p >= COMMIT || along > FLICK_SPEED) && along > -FLICK_SPEED;
     // The corner moved 1.1× as far as the finger, in mirrored coordinates
     const vP = (f.dir > 0 ? vx : -vx) * 1.1 * 1000;
-    // The bookmarks move to where they belong once this page has turned (or back, if it falls back)
-    this.renderTabs(go ? this.m + 2 * f.dir : this.m);
+    // Turning: the bookmarks that will change stay out of sight until the page lies flat. Falling back: they return when it has settled
+    if (go) this.renderTabs(this.m + 2 * f.dir, false, true);
     if (go) this.move('turn', { vP });
     else this.move(f.dir > 0 && !f.top ? 'rest' : 'back', { vP });
   }
@@ -1768,12 +1807,15 @@ export class HighlighterBook extends HTMLElement {
       const idle = this.takeIdle();
       let origin: Pt = { x: 0, y: 0 };
       let wait = false;
-      if (idle && dir > 0) origin = { ...idle.P };
-      else if (idle) {
+      if (idle && dir > 0) {
+        origin = { ...idle.P };
+        this.renderTabs(this.m + 2, false, true);
+      } else if (idle) {
         wait = true;
         this.clearCorner();
       } else {
         this.beginFlip(dir, false);
+        this.renderTabs(this.m + 2 * dir, false, true);
         origin = this.corner(this.flip!);
       }
       w = this.wheel = { dir, dx: 0, origin, wait, pre: 0, samples: [], timer: 0, peak: 0, last: 0, shrinking: 0, events: 0 };
@@ -1791,6 +1833,7 @@ export class HighlighterBook extends HTMLElement {
     if (w.wait && !this.flip) {
       // The resting corner is out of the way: now the left page lifts and follows from here
       this.beginFlip(w.dir, false);
+      this.renderTabs(this.m + 2 * w.dir, false, true);
       w.origin = this.corner(this.flip!);
       w.wait = false;
       w.pre = Math.max(0, w.dx);
