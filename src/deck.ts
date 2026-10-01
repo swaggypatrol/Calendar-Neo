@@ -798,7 +798,6 @@ export class HighlighterDeck extends HTMLElement {
         }
         // The further from the table, the lower it sits: both piles tuck under the one or two cards on the table
         el.style.zIndex = String(Math.round(100 - Math.max(-u, u - b, 0) * 10));
-        el.toggleAttribute('vignette', k < this.todayIndex);
       }
       el.style.transform = `translate(${x}px, ${y}px)`;
       el.style.opacity = opacity < 1 ? String(opacity) : '';

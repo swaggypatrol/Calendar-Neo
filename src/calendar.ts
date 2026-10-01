@@ -29,6 +29,8 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 export const dateKey = (y: number, m0: number, d: number) => `${y}-${pad2(m0 + 1)}-${pad2(d)}`;
 
 const DEFAULT_INK = '#ffd21f';
+/** A second tap on the same day within this long wipes the ink off it. */
+const DOUBLE_TAP_MS = 400;
 
 const STYLE = /* css */ `
 :host {
@@ -99,13 +101,8 @@ header {
 .nav:hover { background: var(--hc-line); }
 .nav:disabled { opacity: 0.2; cursor: default; background: transparent; }
 .hc.hide-nav .nav { visibility: hidden; }
-/* Months already past: a dark vignette around the edges */
-.hc.vignette { box-shadow: inset 0 0 44px 10px rgba(80, 60, 40, 0.16); }
-/* Dark theme: follows the system unless theme="light"; theme="dark" forces it */
-@media (prefers-color-scheme: dark) {
-  :host(:not([theme="light"])) .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
-}
-:host([theme="dark"]) .hc.vignette { box-shadow: inset 0 0 48px 14px rgba(0, 0, 0, 0.45); }
+/* Days already past (and the title of a month that is all past) are printed in grey */
+.title.past, .day.past { color: var(--hc-muted); }
 .nav:focus-visible { outline: 2px solid var(--hc-accent); }
 .weekdays {
   display: grid;
@@ -114,15 +111,26 @@ header {
   margin-bottom: 4px;
 }
 .weekdays span { text-align: center; font-size: calc(var(--hc-num) / 1.272); color: var(--hc-muted); }
+/* The ink needs room round the grid, but only the grid itself takes the pen: a press just outside it is not a stroke
+   (in a book, that is where the page is taken hold of to turn it) */
 .wrap {
   position: relative;
   margin: -14px;
   padding: 14px;
+  pointer-events: none;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   cursor: crosshair;
+}
+/* What the grid is printed on (--hc-grid-paper, e.g. matte paper in a book; nothing by default), just round the days */
+.wrap::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border-radius: calc(var(--hc-radius) + 4px);
+  background: var(--hc-grid-paper, none);
 }
 .wrap.brush-cursor { cursor: none; }
 canvas {
@@ -134,6 +142,7 @@ canvas {
 }
 .grid {
   position: relative;
+  pointer-events: auto;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: var(--hc-gap);
@@ -229,7 +238,6 @@ export class HighlighterCalendar extends HTMLElement {
     'hold-delay',
     'value',
     'hide-nav',
-    'vignette',
     'theme',
     'min',
     'max',
@@ -260,6 +268,7 @@ export class HighlighterCalendar extends HTMLElement {
   private dayEls = new Map<string, HTMLElement>();
   private cells: HTMLElement[] = [];
   private ptr: PointerState | null = null;
+  private lastTap: { key: string; t: number } | null = null;
   private flipCtx: FlipContext = 'api';
   private tapY = 0;
   private pendingComplete = new Set<string>();
@@ -357,9 +366,6 @@ export class HighlighterCalendar extends HTMLElement {
         break;
       case 'theme':
         this.updateBoost();
-        break;
-      case 'vignette':
-        this.shadowRoot!.querySelector('.hc')!.classList.toggle('vignette', v !== null);
         break;
       case 'hide-nav':
         this.shadowRoot!.querySelector('.hc')!.classList.toggle('hide-nav', v !== null);
@@ -514,6 +520,8 @@ export class HighlighterCalendar extends HTMLElement {
     this.$next.disabled = k >= this.range.maxMonth;
     const fmt = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'long' });
     this.$title.textContent = fmt.format(new Date(y, m, 1));
+    const now0 = new Date();
+    this.$title.classList.toggle('past', k < now0.getFullYear() * 12 + now0.getMonth());
     this.$grid.setAttribute('aria-label', this.$title.textContent);
 
     const wd = new Intl.DateTimeFormat(this.locale, { weekday: 'narrow' });
@@ -559,6 +567,7 @@ export class HighlighterCalendar extends HTMLElement {
         num.textContent = String(d);
         el.append(num);
         if (key === todayKey) el.classList.add('today');
+        else if (key < todayKey) el.classList.add('past');
         if (!this.range.allows(key)) {
           el.classList.add('disabled');
           el.setAttribute('aria-disabled', 'true');
@@ -843,11 +852,16 @@ export class HighlighterCalendar extends HTMLElement {
     const { x, y } = this.local(e);
     const tap = !cancelled && !p.moved && !p.holdStarted && e.timeStamp - p.downAt < this.holdDelay;
     if (tap) {
-      // Tap: like a drop of ink, the day is selected with a single sweep (right click erases it)
+      // Tap: like a drop of ink, the day is selected with a single sweep (right click erases it). Tapping the same day
+      // again straight away wipes the ink off it: the way to erase with a finger
+      const key = this.dayAt(x, y);
+      const again = !!key && this.lastTap?.key === key && e.timeStamp - this.lastTap.t < DOUBLE_TAP_MS;
+      this.lastTap = key && !again ? { key, t: e.timeStamp } : null;
       this.flipCtx = 'tap';
       this.tapY = y;
-      this.engine.tap(x, y);
-    }
+      if (again) this.engine.setDay(key!, false);
+      else this.engine.tap(x, y);
+    } else this.lastTap = null;
     this.flipCtx = 'stroke';
     this.engine.endStroke();
     this.ink.endLive(!tap);
@@ -867,6 +881,15 @@ export class HighlighterCalendar extends HTMLElement {
     this.flipCtx = 'api';
     this.emit('change', p.startValue);
     this.kick();
+  }
+
+  /** The day under a point (in the wrap's coordinates), if any. */
+  private dayAt(x: number, y: number): string | null {
+    for (const row of this.engine.layout) {
+      if (y < row.top || y > row.bottom) continue;
+      for (const d of row.days) if (x >= d.left && x <= d.right) return d.key;
+    }
+    return null;
   }
 
   private updateCursor(e: PointerEvent): void {

@@ -93,7 +93,7 @@ const parseKey = (s: string): number | null => {
   return m ? monthIndex(Number(m[1]), Math.min(11, Math.max(0, Number(m[2]) - 1))) : null;
 };
 
-/** The golden ratio: the page margins, the binding, the pen and eraser and the bookmarks are all laid out with it. */
+/** The golden ratio: the page margins, the binding and the bookmarks are all laid out with it. */
 const PHI = (1 + Math.sqrt(5)) / 2;
 
 /** Page margins: m on the outer edge and at the top, m·φ on the binding side (room for the punched holes), m/φ at the bottom. */
@@ -114,8 +114,8 @@ const HALF = SPINE / 2;
 /** Across the coil, hole to hole. */
 const COIL = 2 * (HALF + HOLE_INSET);
 /**
- * The coil's wire seen end on: a circle round the spine, through the holes of both open pages. The pen lies along its
- * middle; a turning sheet's hole column rides over the top of it from one page to the other.
+ * The coil's wire seen end on: a circle round the spine, through the holes of both open pages. A turning sheet's hole
+ * column rides over the top of it from one page to the other.
  */
 const HOLE_U = HALF + HOLE_INSET;
 const WIRE_Z = 7;
@@ -182,28 +182,27 @@ const slantQ = (mid: number, side: number, C: Pt, H: number): Pt => {
   return { x: C.x - 2 * d * n.x, y: C.y - 2 * d * n.y };
 };
 
-/**
- * The highlighter is pushed into the coil from the top and the eraser from the bottom, meeting at the golden section of
- * the spine. Both are 1/φ² of the coil across, so the strip of paper inside the holes (PITCH/φ wide) still clears them
- * as a sheet swings round the wire: they never get in the way of a turning page. The tool in use is drawn PITCH/φ further out.
- */
-const PEN_D = Math.round(COIL / PHI ** 2);
-const ERASER_D = PEN_D - 1;
-const PEN_OUT = Math.round(PITCH * PHI);
-const ERASER_OUT = Math.round(PITCH * PHI) - 4;
-const TOOL_GAP = 6;
-const SLIDE = Math.round(PITCH / PHI);
-/** How far beside the pen (the one in use casts the longest) and the wire their shadows fall on the paper. */
-const TOOL_SHADOW = 6;
+/** Uncoated paper's grain, for the matte panel the days are printed on: faint fibres, darker on light paper, lighter on dark. */
+const grain = (r: number, g: number, b: number, a: number) => {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">` +
+    `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/>` +
+    `<feColorMatrix values="0 0 0 0 ${r}  0 0 0 0 ${g}  0 0 0 0 ${b}  0 0 0 ${a} ${(-a * 0.42).toFixed(3)}"/></filter>` +
+    `<rect width="100%" height="100%" filter="url(#n)"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+};
+const GRAIN_LIGHT = grain(0.36, 0.29, 0.19, 0.42);
+const GRAIN_DARK = grain(0.85, 0.85, 0.82, 0.22);
+/** How far beside the wire its shadow falls on the paper. */
 const WIRE_SHADOW = 3.5;
-/** Room above and below the pages for what sticks out of the coil (and its shadow), and either side for the bookmarks. */
-const ROOM_TOP = PEN_OUT + SLIDE + 6;
-const ROOM_BOTTOM = ERASER_OUT + SLIDE + 8;
+/** Room above and below the pages for the coil's ends (and their shadows), and round the book for the bookmarks. */
+const ROOM_TOP = 10;
+const ROOM_BOTTOM = 10;
 const PAD_X = 40;
-const PAD_TOP = ROOM_TOP + 4;
-const PAD_BOTTOM = Math.max(30, ROOM_BOTTOM + 2);
+const PAD_TOP = 18;
+const PAD_BOTTOM = 30;
 
-/** One turn of the coil seen from above: a wire rising out of a hole on the left page, over the pen, into the right page. */
+/** One turn of the coil seen from above: a wire rising out of a hole on the left page, over the spine, into the right page. */
 const coilTile = (c: { dark: string; mid: string; light: string; glint: number; shadow: number }) => {
   const l = 22 - COIL / 2;
   const r = 22 + COIL / 2;
@@ -215,7 +214,7 @@ const coilTile = (c: { dark: string; mid: string; light: string; glint: number; 
     `<linearGradient id="g" x1="0" x2="1"><stop offset=".22" stop-color="#fff" stop-opacity="0"/>` +
     `<stop offset=".47" stop-color="#fff" stop-opacity="${c.glint}"/><stop offset=".78" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
     `<filter id="b" x="-20%" y="-80%" width="140%" height="260%"><feGaussianBlur stdDeviation="1"/></filter></defs>` +
-    // its shadow on the paper (and on the pen), then the wire, then a glint along its top
+    // its shadow on the paper, then the wire, then a glint along its top
     `<path d="M${l + 1} ${y + 3.4}Q22 ${y - 2.6} ${r + 1} ${y + 1.2}" fill="none" stroke="#000" stroke-opacity="${c.shadow}" stroke-width="2.4" stroke-linecap="round" filter="url(#b)"/>` +
     `<path d="M${l} ${y + 1.1}Q22 ${y - 5} ${r} ${y - 1.1}" fill="none" stroke="url(#m)" stroke-width="2.4" stroke-linecap="round"/>` +
     `<path d="M${l + 2} ${y + 0.2}Q22 ${y - 5.7} ${r - 2} ${y - 1.9}" fill="none" stroke="url(#g)" stroke-width=".8" stroke-linecap="round"/>` +
@@ -233,8 +232,11 @@ const DARK_VARS = /* css */ `
     --hb-hole: rgba(8, 9, 11, 0.78);
     --hb-hole-rim: rgba(0, 0, 0, 0.35);
     --hb-hollow: rgba(0, 0, 0, 0.42);
-    --hb-coil: ${COIL_DARK};
-    --hb-tool-light: 0.84;`;
+    --hb-gloss: rgba(255, 255, 255, 0.055);
+    --hb-sheen-dim: rgba(0, 0, 0, 0.12);
+    --hb-matte: #2c2f35;
+    --hb-grain: ${GRAIN_DARK};
+    --hb-coil: ${COIL_DARK};`;
 
 const STYLE = /* css */ `
 :host {
@@ -246,6 +248,10 @@ const STYLE = /* css */ `
   --hb-hole: rgba(58, 44, 26, 0.62);
   --hb-hole-rim: rgba(58, 44, 26, 0.22);
   --hb-hollow: rgba(60, 45, 25, 0.2);
+  --hb-gloss: rgba(255, 255, 255, 0.95);
+  --hb-sheen-dim: rgba(90, 70, 40, 0.06);
+  --hb-matte: #f6f2ea;
+  --hb-grain: ${GRAIN_LIGHT};
   --hb-coil: ${COIL_LIGHT};
   --hb-pitch: ${PITCH}px;
   --hc-card-width: 22rem;
@@ -275,11 +281,16 @@ const STYLE = /* css */ `
   grid-template-columns: auto auto;
   column-gap: ${SPINE}px;
 }
+/* Coated paper, glossy: a soft sheen and a brighter streak across it, as it catches the light. The grid of days is printed
+   on a matte panel (see highlighter-calendar below): the only part that takes ink. The glossy margin round it is for
+   holding the page (ink would only smear on it) */
 .page, .turn {
   position: relative;
   box-sizing: border-box;
   padding: ${MARGIN}px ${MARGIN}px ${MARGIN_BOTTOM}px;
   background:
+    linear-gradient(122deg, transparent 8%, var(--hb-gloss) 27%, transparent 46%, transparent 74%, color-mix(in srgb, var(--hb-gloss) 60%, transparent) 84%, transparent 94%),
+    linear-gradient(122deg, var(--hb-sheen-dim), transparent 22%, transparent 56%, var(--hb-sheen-dim)),
     radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(120, 90, 40, 0.05)),
     var(--hb-paper);
 }
@@ -360,10 +371,11 @@ highlighter-calendar {
   width: var(--hc-card-width);
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
+  --hc-grid-paper: var(--hb-grain), var(--hb-matte);
 }
-/* The spine: the gap between the pages, the coil over it, and the highlighter and eraser pushed into the coil. The coil
-   runs through the holes of every sheet lying open, so it is drawn over them; a sheet lifted to turn rises above it all and
-   covers the coil, the pen and the eraser, except along its own punched edge, which stays threaded on the coil */
+/* The spine: the gap between the pages and the coil over it. The coil runs through the holes of every sheet lying open, so
+   it is drawn over them; a sheet lifted to turn rises above it and covers it, except along its own punched edge, which
+   stays threaded on the coil */
 .spine {
   position: absolute;
   left: 50%;
@@ -381,7 +393,7 @@ highlighter-calendar {
   margin-left: -${SPINE / 2}px;
   top: ${ROOM_TOP}px;
   bottom: ${ROOM_BOTTOM}px;
-  background: linear-gradient(to right, var(--hb-hollow), transparent 50%, var(--hb-hollow));
+  background: linear-gradient(to right, var(--hb-hollow), color-mix(in srgb, var(--hb-hollow) 45%, transparent) 50%, var(--hb-hollow));
 }
 .coil {
   position: absolute;
@@ -391,88 +403,10 @@ highlighter-calendar {
   bottom: ${ROOM_BOTTOM}px;
   background: var(--hb-coil) 50% 0 / 44px var(--hb-pitch) repeat-y;
 }
-/* The same pen, eraser and coil again, over each part of the turning sheet: drawn over it only where they stand higher than it */
+/* The same coil again, over each part of the turning sheet: drawn over it only where the wire stands higher than it */
 .spine.over { clip-path: polygon(0 0, 0 0, 0 0); }
 .spine.over.a { z-index: 5; }
 .spine.over.b { z-index: 7; }
-.spine.over .tool { pointer-events: none; }
-.spine.over .tools { position: absolute; inset: 0; }
-.tool {
-  position: absolute;
-  left: 50%;
-  box-sizing: border-box;
-  border: 0;
-  padding: 0;
-  background: none;
-  cursor: pointer;
-  pointer-events: auto;
-  filter: brightness(var(--hb-tool-light, 1)) drop-shadow(1px 2px 1.5px rgba(0, 0, 0, 0.3));
-  transition: translate 0.55s cubic-bezier(0.22, 0.8, 0.3, 1), filter 0.55s;
-}
-.tool > span { position: absolute; left: 0; right: 0; }
-.tool:focus-visible { outline: 2px solid color-mix(in srgb, var(--hb-ink) 70%, #000); outline-offset: 3px; border-radius: 6px; }
-/* The highlighter: cap (in the ink colour, with a clip) sticking out of the top of the coil, white barrel inside it */
-.pen {
-  width: ${PEN_D}px;
-  margin-left: -${PEN_D / 2}px;
-  top: ${ROOM_TOP - PEN_OUT}px;
-  height: calc(${PEN_OUT}px + (100% - ${ROOM_TOP + ROOM_BOTTOM}px) / ${PHI} - ${TOOL_GAP / 2}px);
-}
-.pen .cap {
-  top: 0;
-  height: ${PEN_OUT + 7}px;
-  border-radius: ${PEN_D / 2}px ${PEN_D / 2}px 2px 2px;
-  background: linear-gradient(to right,
-    color-mix(in srgb, var(--hb-ink) 62%, #000), var(--hb-ink) 34%,
-    color-mix(in srgb, var(--hb-ink) 45%, #fff) 50%, var(--hb-ink) 66%, color-mix(in srgb, var(--hb-ink) 58%, #000));
-}
-.pen .clip {
-  left: ${PEN_D / 2 - 1.5}px;
-  right: auto;
-  width: 3px;
-  top: 6px;
-  height: ${PEN_OUT + 12}px;
-  border-radius: 1.5px;
-  background: linear-gradient(to right, color-mix(in srgb, var(--hb-ink) 50%, #000), color-mix(in srgb, var(--hb-ink) 60%, #fff), color-mix(in srgb, var(--hb-ink) 50%, #000));
-  box-shadow: 0.5px 1px 1px rgba(0, 0, 0, 0.25);
-}
-.pen .barrel {
-  top: ${PEN_OUT + 7}px;
-  bottom: 0;
-  border-radius: 2px 2px ${PEN_D / 2}px ${PEN_D / 2}px;
-  background:
-    linear-gradient(var(--hb-ink), var(--hb-ink)) 0 3px / 100% 3px no-repeat,
-    linear-gradient(to right, #aaa69d, #e9e7e1 36%, #ffffff 50%, #e3e1da 66%, #a29e95);
-}
-/* The eraser: a slim holder inside the coil, the rubber sticking out of the bottom */
-.eraser {
-  width: ${ERASER_D}px;
-  margin-left: -${ERASER_D / 2}px;
-  top: calc(${ROOM_TOP}px + (100% - ${ROOM_TOP + ROOM_BOTTOM}px) / ${PHI} + ${TOOL_GAP / 2}px);
-  bottom: ${ROOM_BOTTOM - ERASER_OUT}px;
-}
-.eraser .sleeve {
-  top: 0;
-  bottom: ${ERASER_OUT + 4}px;
-  border-radius: ${ERASER_D / 2}px ${ERASER_D / 2}px 1px 1px;
-  background: linear-gradient(to right, #4f6275, #8ea2b6 36%, #b9c8d6 50%, #8a9eb2 66%, #4a5c6e);
-}
-.eraser .ferrule {
-  bottom: ${ERASER_OUT + 1}px;
-  height: 3px;
-  background: linear-gradient(to right, #80868e, #e6e9ec 50%, #7a8088);
-}
-.eraser .rubber {
-  bottom: 0;
-  height: ${ERASER_OUT + 1}px;
-  border-radius: 1px 1px ${ERASER_D / 2 - 1}px ${ERASER_D / 2 - 1}px;
-  background: linear-gradient(to right, #cf8f96, #f2c3c6 36%, #fde4e4 50%, #efbcc0 66%, #c9878f);
-}
-/* The tool in use is drawn further out of the coil and lifts off the paper; the other one sits pushed in */
-.tool:not(.on):hover { translate: 0 calc(var(--out) * 0.3); }
-.tool.on { translate: 0 var(--out); filter: brightness(var(--hb-tool-light, 1)) drop-shadow(2px 5px 4px rgba(0, 0, 0, 0.3)); }
-.pen { --out: -${SLIDE}px; }
-.eraser { --out: ${SLIDE}px; }
 /* The page corners: click (or press and pull) to turn. The right one is the real sheet, peeled back and breathing */
 .corner {
   position: absolute;
@@ -626,16 +560,17 @@ interface Wheel {
  * <highlighter-book>: an open spiral-bound paper calendar. Two facing pages, with a month printed on each side of every sheet,
  * so two months are always open at once; every sheet is punched along its inner edge and turns round the coil like real paper.
  *
- * - A highlighter is pushed into the coil from the top and an eraser from the bottom: tap one to pick it up (it becomes what
- *   the left button or a finger does, and a toolchange event fires). They are thin enough that turning sheets slip past them.
- * - Margins, the day grid, the coil, where the two tools meet and where the bookmarks sit all follow the golden ratio.
+ * - Only the grid of days, printed on matte paper, takes the highlighter; the glossy margin round it is where the page is
+ *   taken hold of to turn it. A finger highlights; tapping a day twice wipes its ink off (or the right button erases).
+ * - Margins, the day grid, the coil and where the bookmarks sit all follow the golden ratio.
  * - The right page's bottom corner rests slightly peeled back, breathing. It is the real sheet: click it, or pull it, and
  *   the same curl carries on into a full turn.
- * - Press on blank space (outside the day cells) and drag, or swipe sideways with two fingers on a trackpad: drag left and the
- *   right page follows your finger over; drag right and the left page turns back. Let go past about a third, or with a flick,
- *   and the page carries on and settles flat; otherwise it falls back. Quick swipes in a row riffle page after page.
+ * - Press on the margin (outside the grid of days) and drag, or swipe sideways with two fingers on a trackpad: drag left and
+ *   the right page follows your finger over; drag right and the left page turns back. Let go past about a third, or with a
+ *   flick, and the page carries on and settles flat; otherwise it falls back. A tap on the margin turns that page. Quick
+ *   swipes in a row riffle page after page.
  * - A month with selected days sticks a bookmark out of the fore-edge; click it to jump to that month.
- * - Months already past are printed with a vignette.
+ * - Days already past are printed in grey (and so is a month's title once all of it is past).
  * Attributes and input / change events are the same as <highlighter-calendar>; it also has month (the left page's month) and next() / prev().
  */
 export class HighlighterBook extends HTMLElement {
@@ -652,21 +587,16 @@ export class HighlighterBook extends HTMLElement {
   private marks = new Map<number, HTMLButtonElement>();
   private $prev: HTMLButtonElement;
   private $next: HTMLButtonElement;
-  /** The spine (pen, eraser and coil) drawn again above a turning sheet, wherever they stand higher than it as it lands. */
+  /** The coil drawn again above a turning sheet, wherever the wire stands higher than it as it lands. */
   private $overA: HTMLElement;
   private $overACoil: HTMLElement;
-  private $overATools: HTMLElement;
   private $overB: HTMLElement;
   private $overBCoil: HTMLElement;
-  private $overBTools: HTMLElement;
   /** The inner part's back, once it has swung past upright, and the light on each part. */
   private $margin: HTMLElement;
   private $frontTint: HTMLElement;
   private $marginTint: HTMLElement;
   private $backTint: HTMLElement;
-  /** The highlighter and the eraser pushed into the coil: pick one up to switch tools. */
-  private $pen: HTMLButtonElement;
-  private $eraser: HTMLButtonElement;
   /** Keeps the holes (and the coil running through them) evenly spaced down the page whatever its height. */
   private sizer: ResizeObserver | null = null;
   /** Six pages: the two open ones, plus the two either side prepared ahead of time so a turn never has to wait for one. */
@@ -710,22 +640,12 @@ export class HighlighterBook extends HTMLElement {
           <div class="flap"><div class="turn back"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="tint"></div><div class="strip"></div></div></div></div>
           <div class="spine">
             <div class="hollow"></div>
-            <button class="tool pen" type="button" part="pen" title="Highlighter" aria-label="Highlighter"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></button>
-            <button class="tool eraser" type="button" part="eraser" title="Eraser" aria-label="Eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></button>
             <div class="coil"></div>
           </div>
           <div class="spine over a" aria-hidden="true">
-            <div class="tools">
-              <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
-              <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
-            </div>
             <div class="coil"></div>
           </div>
           <div class="spine over b" aria-hidden="true">
-            <div class="tools">
-              <div class="tool pen"><span class="barrel"></span><span class="cap"></span><span class="clip"></span></div>
-              <div class="tool eraser"><span class="sleeve"></span><span class="ferrule"></span><span class="rubber"></span></div>
-            </div>
             <div class="coil"></div>
           </div>
         </div>
@@ -745,21 +665,12 @@ export class HighlighterBook extends HTMLElement {
     this.$next = q('.corner.next');
     this.$overA = q('.spine.over.a');
     this.$overACoil = q('.spine.over.a .coil');
-    this.$overATools = q('.spine.over.a .tools');
     this.$overB = q('.spine.over.b');
     this.$overBCoil = q('.spine.over.b .coil');
-    this.$overBTools = q('.spine.over.b .tools');
     this.$margin = q('.turn.margin');
     this.$frontTint = q('.turn.front .tint');
     this.$marginTint = q('.turn.margin .tint');
     this.$backTint = q('.turn.back .tint');
-    this.$pen = q('.tool.pen');
-    this.$eraser = q('.tool.eraser');
-    for (const [el, t] of [[this.$pen, 'highlight'], [this.$eraser, 'erase']] as const) {
-      el.addEventListener('click', () => this.pickTool(t));
-      // A finger or pen picks it up as soon as it lifts, without waiting for the browser to turn the tap into a click
-      el.addEventListener('pointerup', (e) => e.pointerType !== 'mouse' && this.pickTool(t));
-    }
 
     for (let i = 0; i < 6; i++) {
       const c = document.createElement('highlighter-calendar');
@@ -791,7 +702,6 @@ export class HighlighterBook extends HTMLElement {
 
   connectedCallback(): void {
     this.layout();
-    this.syncTools();
     this.sizer = new ResizeObserver(() => this.spaceHoles());
     this.sizer.observe(this.$right);
     this.afterLanding(300);
@@ -824,7 +734,6 @@ export class HighlighterBook extends HTMLElement {
         else c.setAttribute(name, v);
       }
       if (name === 'color') this.style.setProperty('--hb-ink', v ?? '#ffd21f');
-      if (name === 'tool') this.syncTools();
       if (name === 'min' || name === 'max') {
         this.range.set(name, v);
         this.selection = this.pages[0].value;
@@ -861,7 +770,6 @@ export class HighlighterBook extends HTMLElement {
 
   set tool(t: Tool) {
     for (const c of this.pages) c.tool = t;
-    this.syncTools();
   }
 
   /** The book's full width, bookmarks and all (for laying out whatever holds it). */
@@ -928,24 +836,6 @@ export class HighlighterBook extends HTMLElement {
     if (!this.flip) this.afterLanding(0);
   }
 
-  // ---------- The highlighter and the eraser in the coil ----------
-
-  /** Picking up the highlighter or the eraser switches what the left button (or a finger) does on every page. */
-  private pickTool(t: Tool): void {
-    if (this.tool === t) return;
-    this.setAttribute('tool', t);
-    this.dispatchEvent(new CustomEvent('toolchange', { detail: { tool: t }, bubbles: true, composed: true }));
-  }
-
-  /** The tool in use is drawn a little further out of the coil, the other one pushed back in. */
-  private syncTools(): void {
-    const erase = this.tool === 'erase';
-    for (const el of this.shadowRoot!.querySelectorAll('.pen')) el.classList.toggle('on', !erase);
-    for (const el of this.shadowRoot!.querySelectorAll('.eraser')) el.classList.toggle('on', erase);
-    this.$pen.setAttribute('aria-pressed', String(!erase));
-    this.$eraser.setAttribute('aria-pressed', String(erase));
-  }
-
   /** Space the holes evenly down the page, a whole number of them, so the coil passes through every one exactly. */
   private spaceHoles(): void {
     const H = this.$right.offsetHeight;
@@ -980,7 +870,6 @@ export class HighlighterBook extends HTMLElement {
   private setMonth(el: HighlighterCalendar, k: number): void {
     const key = keyOf(k);
     if (el.month !== key) el.month = key;
-    el.toggleAttribute('vignette', k < this.todayIndex);
   }
 
   /** A spare page already showing month k. */
@@ -1629,7 +1518,6 @@ export class HighlighterBook extends HTMLElement {
       this.$back.style.clipPath = polyCss([]);
       this.$overA.style.clipPath = polyCss([{ x: HALF, y: -ROOM_TOP }, { x: HALF + W, y: -ROOM_TOP }, { x: HALF + W, y: H + ROOM_BOTTOM }, { x: HALF, y: H + ROOM_BOTTOM }].map(toSpine));
       this.$overACoil.style.clipPath = '';
-      this.$overATools.style.clipPath = '';
       this.$overB.style.clipPath = polyCss([]);
       for (const t of this.shadowRoot!.querySelectorAll<HTMLElement>('.tint')) t.style.background = 'transparent';
       flap.style.filter = '';
@@ -1672,15 +1560,14 @@ export class HighlighterBook extends HTMLElement {
     this.$backTint.style.background = shade(nOut, 0.2);
 
     // Who is on top at the spine, by height: paper and metal are both opaque. The coil's wire arches over the spine,
-    // highest along the middle; the pen and eraser lie inside it, lower. Each part of the sheet covers them where it is the
-    // higher, and they show over it where they are: so the inner part, rising from the coil, has the wire going into its
-    // holes, and the outer part, folded over high up, covers everything until it comes down onto the other page
+    // highest along the middle. Each part of the sheet covers it where it is the higher, and it shows over the paper where
+    // it is: so the inner part, rising from the coil, has the wire going into its holes, and the outer part, folded over
+    // high up, covers it until it comes down onto the other page
     const wire = (x: number) => (Math.abs(x) >= COIL / 2 ? -1 : 20 * Math.sqrt(1 - ((2 * x) / COIL) ** 2));
-    const tool = (x: number) => (Math.abs(x) >= PEN_D / 2 ? -1 : 7 + Math.sqrt((PEN_D / 2) ** 2 - x * x));
     // The outline of where a thing stands higher than the paper over it (height z(x, y) on the screen), between y0 and
     // y1, in the spine's coordinates (shifted down by dy for an element that starts lower): one shape per stretch. Beside
     // the thing (half `body` across), within `reach` of it, lies the shadow it casts on the paper, which shows wherever the
-    // paper is lower than the nearest part of it: a sheet lying under the coil still has the pen's and the wire's shadows on it
+    // paper is lower than the nearest part of it: a sheet lying under the coil still has the wire's shadow on it
     const outline = (
       h: (x: number) => number,
       z: (x: number, y: number) => number,
@@ -1734,7 +1621,6 @@ export class HighlighterBook extends HTMLElement {
       const zIn = (x: number) => b.innerZ({ x: (x - inner[4]) / ca, y: 0 });
       this.$overA.style.clipPath = polyCss(innerPoly.map(toSpine));
       this.$overACoil.style.clipPath = outline(wire, zIn, 0, H, 0, true, COIL / 2, WIRE_SHADOW);
-      this.$overATools.style.clipPath = outline(tool, zIn, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP, true, PEN_D / 2, TOOL_SHADOW);
     } else this.$overA.style.clipPath = polyCss([]);
     // Over the outer part (tilted a little along a slanting bend: worked out slice by slice)
     const outerPoly = fold.map((q) => ap(outer, q));
@@ -1743,7 +1629,6 @@ export class HighlighterBook extends HTMLElement {
       const zOut = (x: number, y: number) => b.outerZ(ap(back, { x, y }));
       this.$overB.style.clipPath = polyCss(outerPoly.map(toSpine));
       this.$overBCoil.style.clipPath = outline(wire, zOut, 0, H, 0, false, COIL / 2, WIRE_SHADOW);
-      this.$overBTools.style.clipPath = outline(tool, zOut, -ROOM_TOP, H + ROOM_BOTTOM, ROOM_TOP, false, PEN_D / 2, TOOL_SHADOW);
     } else this.$overB.style.clipPath = polyCss([]);
 
     // Shading along the bend, and the shadows the lifted sheet casts
@@ -2163,11 +2048,11 @@ export class HighlighterBook extends HTMLElement {
     if (!g || g.id !== e.pointerId) return;
     this.gesture = null;
     if (g.mode === 'idle') {
-      // A tap on a page corner turns the page
-      if (!cancelled && g.corner && e.timeStamp - g.t < 500) {
-        if (g.corner > 0) this.next();
-        else this.prev();
-      } else if (!this.flip) this.afterLanding(120);
+      // A tap on a page's margin (or its corner) turns that page
+      const side = !cancelled && e.timeStamp - g.t < 500 ? g.corner || this.sideAt(g.x, g.y) : 0;
+      if (side > 0) this.next();
+      else if (side < 0) this.prev();
+      else if (!this.flip) this.afterLanding(120);
       return;
     }
     const s0 = g.samples[0];
@@ -2185,6 +2070,13 @@ export class HighlighterBook extends HTMLElement {
     if (e.pointerType === 'mouse') this.hover(e.clientX, e.clientY);
     else this.peelHover = false;
     this.release(!cancelled, vx, g.pre);
+  }
+
+  /** Which open page a point is on: 1 the right one, -1 the left one, 0 neither. */
+  private sideAt(x: number, y: number): 0 | 1 | -1 {
+    const r = this.$spread.getBoundingClientRect();
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return 0;
+    return x > r.left + r.width / 2 ? 1 : -1;
   }
 
   private turnBackLater(yes: boolean): void {

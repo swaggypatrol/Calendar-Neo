@@ -12,10 +12,10 @@
         <h1>Highlighter Calendar · Booking date field</h1>
         <p>Tap the date field and it grows into a calendar. Just swipe across the days you want, like using a highlighter.</p>
         <ul>
-          <li><b>Left-drag / swipe</b>: paint. A day counts as selected once <span id="th-inline">35</span>/64 of its cells are painted; <b>right-drag</b> is the eraser.</li>
+          <li><b>Left-drag / swipe</b> over the grid of days: paint. A day counts as selected once <span id="th-inline">35</span>/64 of its cells are painted; <b>right-drag</b> is the eraser, and <b>tapping a day twice</b> wipes its ink off.</li>
           <li><b>Press and hold</b>: the ink bleeds out and darkens; hold long enough and the day is selected in one sweep. <b>Scrubbing back and forth</b> deepens the color up to a limit.</li>
-          <li><b>Paper calendar</b>: when expanded it is an open calendar book with one month on each page, and every sheet has a month printed on both sides. Press on empty space outside the date cells and drag left to turn the right page with your finger; drag right to turn the left page back. You can also tap the folded page corner, and quick repeated swipes flip page after page.</li>
-          <li><b>Bookmarks</b>: any month with selected days gets a bookmark sticking out from the page edge, showing how many days are selected that month (1 to 5+). Tap a bookmark to jump straight to that month, and the bookmark tucks back into the page. Past months are printed with a dark vignette.</li>
+          <li><b>Paper calendar</b>: when expanded it is an open calendar book with one month on each page, and every sheet has a month printed on both sides. Only the grid of days, printed on matte paper, takes the highlighter; the glossy margin round it is for holding the page. Press on the margin and drag left to turn the right page with your finger; drag right to turn the left page back. A tap on a page's margin turns that page, and quick repeated swipes flip page after page.</li>
+          <li><b>Bookmarks</b>: any month with selected days gets a bookmark sticking out from the page edge, showing how many days are selected that month (1 to 5+). Tap a bookmark to jump straight to that month, and the bookmark tucks back into the page. Days already past are printed in grey.</li>
           <li><b>Date field</b>: once you pick, it shows the date range; with several ranges it becomes a carousel you can spin by dragging sideways, scrolling, or tapping the arrows on either side. Tap a range to open the calendar at its month.</li>
         </ul>
       </section>
@@ -31,13 +31,6 @@
 
       <section class="stage">
         <div class="panel">
-          <div class="field">
-            <label>Touch tool</label>
-            <div class="seg" id="tool">
-              <button data-tool="highlight" class="on">Highlighter</button>
-              <button data-tool="erase">Eraser</button>
-            </div>
-          </div>
           <div class="field">
             <label for="threshold">Selection threshold <output id="th-out">35</output>/64</label>
             <input id="threshold" type="range" min="8" max="60" value="35" />
