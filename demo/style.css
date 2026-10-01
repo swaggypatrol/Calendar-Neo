@@ -91,3 +91,13 @@ pre {
   font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;
 }
 .log { margin: 10px 0 0; padding-left: 1.2em; color: var(--muted); font-size: 0.82rem; max-height: 8.5em; overflow: auto; }
+/* Phones: the booking bar stacks up, so nothing is wider than the screen (the calendar opens over the whole screen) */
+@media (max-width: 760px) {
+  main { padding: 20px 14px 48px; }
+  h1 { font-size: 1.35rem; padding-right: 48px; }
+  .booking { margin: 4px 0 22px; }
+  .bar { flex-direction: column; align-items: stretch; border-radius: 22px; width: 100%; }
+  .bar .slot { min-width: 0; padding: 10px 20px; }
+  .bar highlighter-picker, .bar highlighter-deck { display: block; }
+  .bar .go { margin: 4px 0 0; }
+}

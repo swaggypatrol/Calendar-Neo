@@ -201,6 +201,11 @@ const ROOM_BOTTOM = 10;
 const PAD_X = 40;
 const PAD_TOP = 18;
 const PAD_BOTTOM = 30;
+/** Round the upright book (layout="vertical"): above and below for the bookmarks, either side for the ribbons. */
+const VPAD_Y = 36;
+const VPAD_X = 14;
+/** Mirror across the diagonal: x for y. The upright book is the usual spread mirrored like this, its printing mirrored back. */
+const DIAGONAL = 'matrix(0, 1, 1, 0, 0, 0)';
 
 /** One turn of the coil seen from above: a wire rising out of a hole on the left page, over the spine, into the right page. */
 const coilTile = (c: { dark: string; mid: string; light: string; glint: number; shadow: number }) => {
@@ -254,7 +259,9 @@ const STYLE = /* css */ `
   --hb-grain: ${GRAIN_LIGHT};
   --hb-coil: ${COIL_LIGHT};
   --hb-pitch: ${PITCH}px;
-  --hc-card-width: 22rem;
+  /* To fit a small screen: --hb-width narrows the calendars and --hb-scale shrinks their print (the day cells' height with
+     it); the paper round them, the coil and the margins stay as they are */
+  --hc-card-width: calc(22rem * var(--hb-width, var(--hb-scale, 1)));
   --hb-ease: cubic-bezier(0.65, 0, 0.35, 1);
   display: block;
 }
@@ -275,6 +282,7 @@ const STYLE = /* css */ `
   user-select: none;
   -webkit-user-select: none;
 }
+.frame { position: relative; }
 .spread {
   position: relative;
   display: grid;
@@ -372,6 +380,7 @@ highlighter-calendar {
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
   --hc-grid-paper: var(--hb-grain), var(--hb-matte);
+  --hc-num: calc(0.875rem * var(--hb-scale, 1));
 }
 /* The spine: the gap between the pages and the coil over it. The coil runs through the holes of every sheet lying open, so
    it is drawn over them; a sheet lifted to turn rises above it and covers it, except along its own punched edge, which
@@ -393,7 +402,10 @@ highlighter-calendar {
   margin-left: -${SPINE / 2}px;
   top: ${ROOM_TOP}px;
   bottom: ${ROOM_BOTTOM}px;
-  background: linear-gradient(to right, var(--hb-hollow), color-mix(in srgb, var(--hb-hollow) 45%, transparent) 50%, var(--hb-hollow));
+  /* Down the gap between the pages: the edges of the sheets below, in the binding's shade */
+  background:
+    linear-gradient(to right, var(--hb-hollow), color-mix(in srgb, var(--hb-hollow) 45%, transparent) 50%, var(--hb-hollow)),
+    var(--hb-paper-edge);
 }
 .coil {
   position: absolute;
@@ -415,7 +427,7 @@ highlighter-calendar {
 /* The page corners: click (or press and pull) to turn. The right one is the real sheet, peeled back and breathing */
 .corner {
   position: absolute;
-  bottom: ${PAD_BOTTOM}px;
+  bottom: 0;
   width: 72px;
   height: 72px;
   border: 0;
@@ -424,8 +436,8 @@ highlighter-calendar {
   cursor: pointer;
   z-index: 9;
 }
-.corner.next { right: ${PAD_X}px; }
-.corner.prev { left: ${PAD_X}px; }
+.corner.next { right: 0; }
+.corner.prev { left: 0; }
 .corner[disabled] { pointer-events: none; }
 .corner:focus { outline: none; }
 .corner:focus-visible { outline: 2px solid color-mix(in srgb, var(--hb-ink) 70%, transparent); outline-offset: -10px; border-radius: 14px; }
@@ -459,6 +471,46 @@ highlighter-calendar {
 /* Gone with its sheet while that sheet turns over (or while pages riffle past): it comes back where it belongs once the
    page lies flat */
 .mark.away { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+/* Upright, for a narrow screen (layout="vertical"): the binding runs across, the two months sit one above the other and
+   pages turn up and down. The spread is laid out exactly as usual and then mirrored across its diagonal, which turns
+   left-right into up-down, while everything printed (the calendars, the bookmarks' counts) is mirrored back so it reads
+   the right way up. The turning, the coil, the light and the shadows are the same paper either way */
+.book.vertical {
+  box-sizing: content-box;
+  width: var(--frame-h, 400px);
+  height: var(--frame-w, 800px);
+  padding: var(--vpad-y, ${VPAD_Y}px) ${VPAD_X}px;
+  touch-action: pinch-zoom;
+}
+.vertical .frame {
+  position: absolute;
+  left: ${VPAD_X}px;
+  top: var(--vpad-y, ${VPAD_Y}px);
+  transform: ${DIAGONAL};
+  transform-origin: 0 0;
+}
+.vertical .page, .vertical .turn { padding: ${MARGIN}px; }
+.vertical .shape-l { padding-right: ${MARGIN_INNER}px; }
+.vertical .shape-r { padding-left: ${MARGIN_INNER}px; }
+.vertical .slot { position: relative; width: var(--cal-h, 330px); height: var(--hc-card-width); }
+.vertical .slot > highlighter-calendar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* (its width is the slot's height, before the mirror) */
+  max-width: none;
+  transform: ${DIAGONAL};
+  transform-origin: 0 0;
+}
+/* (Shadows are given across the diagonal too, so that they fall down the screen) */
+.vertical .page.left { box-shadow: var(--edges-left, none), 8px 0 28px -10px var(--hb-shadow); }
+.vertical .page.right { box-shadow: var(--edges-right, none), 14px 0 28px -10px var(--hb-shadow); }
+.vertical .mark { box-shadow: 1px 0 3px rgba(0, 0, 0, 0.18); }
+.vertical .mark.ribbon { box-shadow: none; }
+.vertical .mark > span { display: inline-block; transform: ${DIAGONAL}; }
+/* Fitted to a small screen (fit): less room round the book and round each calendar, so the days get it instead */
+:host([fit]) { --vpad-y: 26px; }
+:host([fit]) highlighter-calendar::part(root) { padding: 6px 8px 4px; }
 `;
 
 const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'min', 'max', 'theme'];
@@ -593,9 +645,11 @@ interface Wheel {
  * Attributes and input / change events are the same as <highlighter-calendar>; it also has month (the left page's month) and next() / prev().
  */
 export class HighlighterBook extends HTMLElement {
-  static observedAttributes = ['month', 'value', ...FORWARDED];
+  static observedAttributes = ['month', 'value', 'layout', ...FORWARDED];
 
   private $book: HTMLElement;
+  /** The spread with its corners and bookmarks: as it is, or mirrored across its diagonal in the upright layout. */
+  private $frame: HTMLElement;
   private $left: HTMLElement;
   private $right: HTMLElement;
   private $spread: HTMLElement;
@@ -642,6 +696,7 @@ export class HighlighterBook extends HTMLElement {
     root.innerHTML = `
       <style>${STYLE}</style>
       <div class="book" part="book">
+        <div class="frame">
         <div class="spread">
           <div class="page left shape-l"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
           <div class="page right shape-r"><div class="slot"></div><div class="gutter"></div><div class="fx"><div class="strip"></div></div></div>
@@ -666,10 +721,12 @@ export class HighlighterBook extends HTMLElement {
         </div>
         <button class="corner prev" type="button" aria-label="Previous page"></button>
         <button class="corner next" type="button" aria-label="Next page"></button>
+        </div>
         <div class="pool" aria-hidden="true"></div>
       </div>`;
     const q = <T extends Element>(s: string) => root.querySelector(s) as T;
     this.$book = q('.book');
+    this.$frame = q('.frame');
     this.$left = q('.page.left');
     this.$right = q('.page.right');
     this.$spread = q('.spread');
@@ -720,8 +777,12 @@ export class HighlighterBook extends HTMLElement {
 
   connectedCallback(): void {
     this.layout();
-    this.sizer = new ResizeObserver(() => this.spaceHoles());
+    this.sizer = new ResizeObserver(() => {
+      this.spaceHoles();
+      this.fitFrame();
+    });
     this.sizer.observe(this.$right);
+    this.sizer.observe(this.pages[0]);
     this.afterLanding(300);
   }
 
@@ -745,6 +806,16 @@ export class HighlighterBook extends HTMLElement {
   attributeChangedCallback(name: string, _old: string | null, v: string | null): void {
     if (name === 'month') {
       if (v) this.show(v);
+    } else if (name === 'layout') {
+      const vertical = v === 'vertical';
+      if (vertical === this.vertical) return;
+      // Turned round: whatever was moving lies down where it belongs, and the spread is laid out again the other way
+      if (this.settling) this.finishFlip(false, this.settling);
+      if (this.flip) this.finishFlip(!this.flip.idle && this.flip.motion?.kind === 'turn');
+      this.$book.classList.toggle('vertical', vertical);
+      this.fitFrame();
+      this.layout(true);
+      this.afterLanding(300);
     } else if (name === 'value') {
       this.value = (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     } else {
@@ -793,7 +864,48 @@ export class HighlighterBook extends HTMLElement {
 
   /** The book's full width, bookmarks and all (for laying out whatever holds it). */
   get naturalWidth(): number {
+    this.fitFrame();
     return this.$book.offsetWidth || 2 * (this.$right.offsetWidth || 394) + SPINE + 2 * PAD_X;
+  }
+
+  /** The book's full height, bookmarks and all. */
+  get naturalHeight(): number {
+    this.fitFrame();
+    return this.$book.offsetHeight;
+  }
+
+  /** Upright (layout="vertical"): the two months one above the other, turned up and down. */
+  private get vertical(): boolean {
+    return this.$book.classList.contains('vertical');
+  }
+
+  /**
+   * The upright layout has to be told how big the spread is (it is mirrored across its diagonal, which a layout box
+   * doesn't do) and how tall a calendar is (its page is laid out sideways, then mirrored back).
+   */
+  private fitFrame(): void {
+    if (!this.vertical) return;
+    const cal = this.pages[0];
+    if (cal.offsetHeight) this.$book.style.setProperty('--cal-h', `${cal.offsetHeight}px`);
+    const s = this.$spread;
+    this.$book.style.setProperty('--frame-w', `${s.offsetWidth}px`);
+    this.$book.style.setProperty('--frame-h', `${s.offsetHeight}px`);
+  }
+
+  /** A movement on the screen as the spread sees it (in the upright layout, mirrored across its diagonal). */
+  private toFrame(dx: number, dy: number): [number, number] {
+    return this.vertical ? [dy, dx] : [dx, dy];
+  }
+
+  /** Where a pointer is along the spread's own across-the-binding direction (for its speed). */
+  private frameX(e: { clientX: number; clientY: number }): number {
+    return this.vertical ? e.clientY : e.clientX;
+  }
+
+  /** Whether a point on the screen is on the spread's top half (the left half, upright). */
+  private upperHalf(x: number, y: number): boolean {
+    const r = this.$spread.getBoundingClientRect();
+    return this.vertical ? x < r.left + r.width / 2 : y < r.top + r.height / 2;
   }
 
   get color(): string {
@@ -1734,7 +1846,8 @@ export class HighlighterBook extends HTMLElement {
     const crease = Math.abs(n.x) > 1e-6 ? (k - n.y * (H / 2)) / n.x : HALF;
     const high = Math.max(0, b.innerZ({ x: crease, y: 0 }));
     const sh = Math.max(curl, 0.6 * lifted * (1 - p));
-    flap.style.filter = `drop-shadow(${(0.08 * high).toFixed(1)}px ${(0.14 * high).toFixed(1)}px ${(7 * sh + 0.22 * high).toFixed(1)}px rgba(0, 0, 0, ${Math.min(0.3, 0.22 * sh + 0.0012 * high).toFixed(3)}))`;
+    const [shx, shy] = this.toFrame(0.08 * high, 0.14 * high);
+    flap.style.filter = `drop-shadow(${shx.toFixed(1)}px ${shy.toFixed(1)}px ${(7 * sh + 0.22 * high).toFixed(1)}px rgba(0, 0, 0, ${Math.min(0.3, 0.22 * sh + 0.0012 * high).toFixed(3)}))`;
     // The page below: the shadow of the lifted sheet along where the inner part now ends
     const under = f.dir > 0 ? this.$right : this.$left;
     const toUnder = (s: Pt): Pt => ({ x: sx(s.x) - fl, y: s.y });
@@ -1820,7 +1933,7 @@ export class HighlighterBook extends HTMLElement {
     const notch = Math.round(t / PHI);
     // Tabs share the fore-edge from H/φ⁴ below the top to H/φ³ above the bottom (clear of the resting corner). Month n sits
     // frac(n·φ) of the way down: the golden-ratio sequence, which keeps any handful of bookmarks evenly spread out
-    const top0 = PAD_TOP + H / PHI ** 4;
+    const top0 = H / PHI ** 4;
     const span = H - H / PHI ** 4 - H / PHI ** 3 - t;
     const placed: { right: boolean; top: number; level: number }[] = [];
     // The sheet starting to turn: the open page it lifts from and the page on its back
@@ -1838,13 +1951,18 @@ export class HighlighterBook extends HTMLElement {
         mark.addEventListener('click', () => {
           if (!mark.classList.contains('ribbon')) this.goTo(k);
         });
-        this.$book.append(mark);
+        this.$frame.append(mark);
         this.marks.set(k, mark);
         el = mark;
       }
       const label = n >= 5 ? '5+' : String(n);
       const name = `${keyOf(k)}: ${n} day${n === 1 ? '' : 's'} selected`;
-      el.textContent = label;
+      if (el.textContent !== label) {
+        // (In a span, so the upright layout can turn the count back the right way round)
+        const span = document.createElement('span');
+        span.textContent = label;
+        el.replaceChildren(span);
+      }
       el.title = name;
       el.setAttribute('aria-label', name);
       const st = el.style;
@@ -1852,10 +1970,11 @@ export class HighlighterBook extends HTMLElement {
       const ribbon = k === m || k === m + 1;
       if (ribbon) {
         // Hangs from the top edge W/φ⁴ in from the outer edge, the count at the golden section of its length
-        const cx = k === m ? PAD_X + W / PHI ** 4 : PAD_X + spreadW - W / PHI ** 4;
+        // (Upright, both hang by their page's title: the bottom page's from just below the binding, clear of the days)
+        const cx = k === m ? W / PHI ** 4 : this.vertical ? W + SPINE + W / PHI ** 4 : spreadW - W / PHI ** 4;
         g = {
           left: `${(cx - t / 2).toFixed(1)}px`,
-          top: `${(PAD_TOP - 6).toFixed(1)}px`,
+          top: '-6px',
           width: `${t}px`,
           height: `${ribL}px`,
           padding: `${Math.round((ribL - notch) / PHI - 5)}px 0px 0px`,
@@ -1872,7 +1991,7 @@ export class HighlighterBook extends HTMLElement {
         placed.push({ right, top, level });
         const out = level * Math.round(t / PHI ** 2);
         g = {
-          left: `${(right ? PAD_X + spreadW - 4 + out : PAD_X - tabW + 4 - out).toFixed(1)}px`,
+          left: `${(right ? spreadW - 4 + out : -tabW + 4 - out).toFixed(1)}px`,
           top: `${top.toFixed(1)}px`,
           width: `${tabW}px`,
           height: `${t}px`,
@@ -1933,7 +2052,7 @@ export class HighlighterBook extends HTMLElement {
         // top of its page
         st.transition = 'none';
         if (ribbon) place(g.left, `polygon(0 0, 100% 0, 100% 0, 50% 0, 0 0)`);
-        else place(`${(g.right ? PAD_X + spreadW - tabW - 2 : PAD_X + 2).toFixed(1)}px`, g.clip);
+        else place(`${(g.right ? spreadW - tabW - 2 : 2).toFixed(1)}px`, g.clip);
         el.classList.remove('away', 'gone');
         void el.offsetWidth;
         st.transition = '';
@@ -2008,7 +2127,7 @@ export class HighlighterBook extends HTMLElement {
       y: e.clientY,
       t: e.timeStamp,
       mode: 'idle',
-      samples: [{ t: e.timeStamp, x: e.clientX }],
+      samples: [{ t: e.timeStamp, x: this.frameX(e) }],
       origin: { x: 0, y: 0 },
       corner: path.includes(this.$next) || peeled ? 1 : path.includes(this.$prev) ? -1 : 0,
     };
@@ -2023,10 +2142,9 @@ export class HighlighterBook extends HTMLElement {
     if (!this.gesture && this.flip?.idle) this.hover(e.clientX, e.clientY);
     const g = this.gesture;
     if (!g || g.id !== e.pointerId) return;
-    g.samples.push({ t: e.timeStamp, x: e.clientX });
+    g.samples.push({ t: e.timeStamp, x: this.frameX(e) });
     while (g.samples.length > 2 && e.timeStamp - g.samples[0].t > 100) g.samples.shift();
-    const dx = e.clientX - g.x;
-    const dy = e.clientY - g.y;
+    const [dx, dy] = this.toFrame(e.clientX - g.x, e.clientY - g.y);
 
     if (g.mode === 'idle') {
       if (Math.hypot(dx, dy) < DRAG_PX) return;
@@ -2075,14 +2193,12 @@ export class HighlighterBook extends HTMLElement {
       } else if (idle) {
         // Turning back: the left page lifts and follows the finger straight away, while the peeled corner drops back flat
         g.mode = 'drag';
-        const r = this.$spread.getBoundingClientRect();
-        this.backOverCorner(idle, g.y < r.top + r.height / 2);
+        this.backOverCorner(idle, this.upperHalf(g.x, g.y));
         g.origin = this.corner(this.flip!);
       } else {
         g.mode = 'drag';
         // Pressing on the top half of the page lifts the top corner, the bottom half lifts the bottom corner
-        const r = this.$spread.getBoundingClientRect();
-        this.beginFlip(dir, g.y < r.top + r.height / 2);
+        this.beginFlip(dir, this.upperHalf(g.x, g.y));
         this.renderTabs(this.m + 2 * dir, false, true);
         g.origin = this.corner(this.flip!);
       }
@@ -2112,7 +2228,7 @@ export class HighlighterBook extends HTMLElement {
       return;
     }
     const s0 = g.samples[0];
-    const vx = e.timeStamp > s0.t ? (e.clientX - s0.x) / (e.timeStamp - s0.t) : 0;
+    const vx = e.timeStamp > s0.t ? (this.frameX(e) - s0.x) / (e.timeStamp - s0.t) : 0;
     if (g.mode !== 'drag' || !this.flip) {
       if (!this.flip) this.afterLanding(120);
       return;
@@ -2127,7 +2243,8 @@ export class HighlighterBook extends HTMLElement {
   private sideAt(x: number, y: number): 0 | 1 | -1 {
     const r = this.$spread.getBoundingClientRect();
     if (x < r.left || x > r.right || y < r.top || y > r.bottom) return 0;
-    return x > r.left + r.width / 2 ? 1 : -1;
+    const far = this.vertical ? y > r.top + r.height / 2 : x > r.left + r.width / 2;
+    return far ? 1 : -1;
   }
 
   /**
@@ -2151,7 +2268,8 @@ export class HighlighterBook extends HTMLElement {
    * and momentum; when the events stop, the page carries on or falls back, as with letting go.
    */
   private onWheel(e: WheelEvent): void {
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    // (Upright, a sideways swipe on a trackpad is no way to turn a page up or down: leave it to the page)
+    if (this.vertical || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     e.preventDefault();
     const now = performance.now();
     const step = e.deltaX * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);

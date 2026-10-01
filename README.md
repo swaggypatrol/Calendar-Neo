@@ -13,7 +13,7 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 | Element | What it is |
 | --- | --- |
 | `<highlighter-calendar>` | One month you can paint on. The core of everything else. |
-| `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side, pages printed on both sides, turned with a soft page curl; you highlight on the matte grid of days and turn pages by the glossy margin. |
+| `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side (one above the other on a phone held upright), pages printed on both sides, turned with a soft page curl; you highlight on the matte grid of days and turn pages by the glossy margin. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
 
@@ -34,6 +34,7 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 - **Matte and glossy paper.** Only the grid of days is printed on matte paper, and only it takes the highlighter: a stroke that starts anywhere else isn't one. The margin round it is glossy coated paper, with a sheen as it catches the light (ink would only smear on it), and that is where you take hold of a page to turn it.
 - **Turn pages** by dragging on the glossy margin, or with a two-finger sideways swipe on a trackpad (a tap on a page's margin turns that page): drag left and the right page peels up from its corner and follows your finger; drag right to turn back. Lift the corner as you pull and the sheet tilts with your hand; as it comes down onto the coil, the bend straightens out along the binding (the coil holds the sheet's whole edge), so the corner slides down to where it will land while still keeping pace with your finger, and nothing sticks or snaps flat. Drag past about a third, or flick, and it turns; otherwise it settles back. Either way the page carries on with the speed you gave it, slows down naturally and lands exactly flat, with no bounce, pause or snap, and a page that is still moving can be caught again. Swipe quickly several times and it riffles through pages. The right page's bottom corner rests slightly peeled back and gently breathing; it is the real sheet, so clicking or pulling it (or its folded-over flap) continues the same curl into a full turn. Pull the left page and it is in your hand just as quickly: it lifts the moment you pull, while that resting corner drops back flat by itself.
 - **Bookmarks** replace any kind of glow. Every month with selected days gets a bookmark tab on the fore-edge, showing how many days you picked there (1 to 5+). Months you have already turned past sit on the left, months ahead sit on the right. Click a tab to turn straight to that month, and the tab slides into the page as a hanging ribbon. A tab belongs to its sheet, so it sticks out from under the sheets lying on top of it. While a page turns, the bookmarks on that sheet go with it and the rest stay put, the sheet passing over them; as it lands, tabs slide out from under the sheet they are now tucked under, the ribbon of the page that has just landed unrolls from its top edge, and the tab of a page that has just been uncovered slides into it as its ribbon.
+- **Upright on a phone.** With `layout="vertical"` the two months sit one above the other with the coil across the middle, and the pages turn up and down: push the lower page up by its glossy margin to turn it, pull the upper page down to turn back. It is the same book turned on its side, with the same curl, coil and bookmarks (tabs stick out of the top and bottom edges, ribbons hang from the left), and the print stays upright.
 - **Golden proportions** throughout. Page margins are 1 : φ (outer edge : binding side). In the day grid the numbers are 1/φ² of a cell's height, the month title is φ times the numbers and the highlight band is 1/φ of a cell. The coil's hole spacing, hole size and inset are all related by φ. A tab is t × tφ, a ribbon t × tφ², and each month's tab sits frac(n·φ) of the way down the fore-edge: the golden-ratio sequence, which keeps any handful of bookmarks evenly spread.
 - Days already past are printed in grey, and so is a month's title once all of it is past.
 - Everything animates. Nothing jumps.
@@ -41,6 +42,8 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 ## The booking field: `<highlighter-picker>`
 
 A narrow pill that shows today's date. Click it and it grows smoothly into the paper calendar, and the corner of the right page lifts a little to hint that it can be turned. Click outside or press Esc to fold it back.
+
+On a small screen (narrower than 920 px, or too short for the book) it opens over the whole screen instead, as large as fits: upright, turning up and down, on a phone held upright, and side by side on one held sideways. A tap beside the book closes it. On a larger screen the calendar hangs under the field; if the window is too short to show all of it there, the page scrolls up as it opens, and on a page that can't scroll that far it opens above the field.
 
 Once you've picked dates, the pill shows them, for example `Nov 14 – Dec 11`. Pick more than one range and it becomes a small wheel you can drag, scroll or step through; clicking it opens the calendar at that range.
 
@@ -84,6 +87,8 @@ All components share these attributes:
 | `min`, `max` | Selectable range (see above) |
 | `theme` | `light` or `dark` to override the system colour scheme; leave it out to follow the system |
 
+The book also takes `layout`: `horizontal` (default) or `vertical`. Its size follows two CSS custom properties: `--hb-scale` scales the print (and the pages with it), `--hb-width` the width of the pages alone. The picker sets them to fit a small screen.
+
 Events: `input` (fires as each day is selected or cleared while drawing) and `change` (after you lift the pen, if anything changed), both with `detail: { value, added, removed }`; `monthchange` when the visible month changes.
 
 Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the picker `open()` / `close()`.
@@ -103,8 +108,8 @@ npm run build        # library build into dist/
 - `src/engine.ts`: selection logic (8×8 cells, threshold, hold-to-bleed, eraser). No DOM, unit tested.
 - `src/ink.ts`: the highlighter look (bristles, streaks, layering, fading, settling into the band, auto-completed strokes).
 - `src/calendar.ts`: the `<highlighter-calendar>` element, wiring the two to pointer, keyboard and the month grid.
-- `src/book.ts`: the paper calendar (two pages, spiral binding with the highlighter and eraser, page curl, bookmarks).
-- `src/picker.ts`: the booking field (pill, grow animation, range wheel).
+- `src/book.ts`: the paper calendar (two pages, spiral binding, page curl, bookmarks, upright layout).
+- `src/picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
 - `src/deck.ts`: the card-stack layout.
 - `src/range.ts`: `min` / `max` handling.
 - `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo.
