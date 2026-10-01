@@ -121,14 +121,66 @@ const HOLE_U = HALF + HOLE_INSET;
 const WIRE_Z = 7;
 const WIRE_R = Math.hypot(HOLE_U, WIRE_Z);
 const WIRE_A0 = -Math.atan2(WIRE_Z, HOLE_U);
-/** The bend straightens out along the binding as it comes this close to it (px from the coil's axis, at mid-height). */
-const STRAIGHT_FROM = 100;
+/**
+ * How far the bend may slant as it nears the binding (px from the coil's axis, where it crosses mid-height): beyond
+ * SLANT_FREE it slants however the hand pulls; in to STRAIGHT_BY it straightens out until its near end can come no
+ * closer than halfway to the holes.
+ */
+const SLANT_FREE = 260;
 const STRAIGHT_BY = 34;
 /** Where the light comes from: the upper left, a little in front. */
 const LIGHT = (() => {
   const l = Math.hypot(0.35, 0.45, 1);
   return { x: -0.35 / l, y: -0.45 / l, z: 1 / l };
 })();
+
+/**
+ * The bend of a sheet folded flat so that its corner C lands on Q: the perpendicular bisector of the two (points q with
+ * n·q = k), and where it crosses mid-height (of a sheet H tall).
+ */
+const creaseOf = (Q: Pt, C: Pt, H: number) => {
+  const d = sub(C, Q);
+  const l = len(d) || 1e-9;
+  const n = { x: d.x / l, y: d.y / l };
+  const k = (dot(n, C) + dot(n, Q)) / 2;
+  const m = k - n.y * (H / 2);
+  return { n, k, mid: n.x > 1e-9 ? m / n.x : m >= 0 ? Infinity : -Infinity };
+};
+
+/**
+ * How steeply the bend may slant (the tangent of its angle to the binding) when it crosses mid-height `mid` px from the
+ * coil's axis. The coil holds the sheet's whole edge, so the bend can never reach past the holes at either end, and
+ * nearing the binding the paper's own stiffness straightens it further; while only the corner is curled it may slant as
+ * the hand pulls.
+ */
+const slantLimit = (mid: number, H: number): number => {
+  const t = clamp01((SLANT_FREE - mid) / (SLANT_FREE - STRAIGHT_BY));
+  const w = t * t * (3 - 2 * t);
+  return w > 0 ? (2 * Math.max(0, mid - HOLE_U)) / H / ((1 + w) * w) : Infinity;
+};
+
+/**
+ * A bend this near level (its normal's x no more than this) is a corner pulled up the page, folding over a strip along its
+ * edge: the coil doesn't limit that. LEVEL_TAN is the steepest slant short of it.
+ */
+const LEVEL = 0.2;
+const LEVEL_TAN = Math.sqrt(1 / LEVEL ** 2 - 1);
+
+/** Whether the coil lets the sheet bend like this. */
+const slantOk = (Q: Pt, C: Pt, H: number): boolean => {
+  const { n, mid } = creaseOf(Q, C, H);
+  if (!(n.x > -0.02)) return false;
+  return n.x <= LEVEL || Math.abs(n.y) <= n.x * slantLimit(mid, H) + 1e-9;
+};
+
+/** The flat-fold corner of a bend crossing mid-height at `mid` and slanting as far as it may, its far end towards `side`. */
+const slantQ = (mid: number, side: number, C: Pt, H: number): Pt => {
+  const t = Math.min(1e6, slantLimit(mid, H));
+  const m = Math.hypot(1, t);
+  const n = { x: 1 / m, y: (side * t) / m };
+  const d = dot(n, C) - (n.x * mid + n.y * (H / 2));
+  return { x: C.x - 2 * d * n.x, y: C.y - 2 * d * n.y };
+};
 
 /**
  * The highlighter is pushed into the coil from the top and the eraser from the bottom, meeting at the golden section of
@@ -1376,27 +1428,13 @@ export class HighlighterBook extends HTMLElement {
    * its own side (the inner part, from the binding to the bend) swings up round the coil, its column of holes riding along
    * the wire, while the part beyond the bend (the outer part, with the corner) folds back over it, lying level, back up.
    * Q is where the corner would be if the sheet were folded flat; the bend is the perpendicular bisector of the corner and
-   * Q, and how far the inner part has swung up follows from how close the bend has come to the binding. Both parts are flat,
-   * so each maps onto the screen by one affine transform (and is drawn by one element), and both know their height.
+   * Q (how far it may slant is solve()'s business), and how far the inner part has swung up follows from how close the bend
+   * has come to the binding. Both parts are flat, so each maps onto the screen by one affine transform (and is drawn by one
+   * element), and both know their height.
    */
   private bend(Q: Pt, C: Pt, W: number, H: number): Bend | null {
-    const d = sub(C, Q);
-    const dl = len(d);
-    if (dl < 0.5) return null;
-    let n = { x: d.x / dl, y: d.y / dl };
-    let k = (dot(n, C) + dot(n, Q)) / 2;
-    // Nearing the binding the bend straightens out along it: the coil holds the sheet's whole edge, so the paper can't
-    // stay folded on a slant there (one end of it would be pulled through the coil)
-    const at = Math.abs(n.x) > 1e-6 ? (k - n.y * (H / 2)) / n.x : HALF + W;
-    const t = clamp01((STRAIGHT_FROM - at) / (STRAIGHT_FROM - STRAIGHT_BY));
-    const w = t * t * (3 - 2 * t);
-    if (w > 0) {
-      const nx = n.x * (1 - w) + w;
-      const ny = n.y * (1 - w);
-      const m = Math.hypot(nx, ny);
-      n = { x: nx / m, y: ny / m };
-      k = n.x * at + n.y * (H / 2);
-    }
+    if (len(sub(C, Q)) < 0.5) return null;
+    const { n, k } = creaseOf(Q, C, H);
     const rect: Pt[] = [
       { x: HALF, y: 0 },
       { x: HALF + W, y: 0 },
@@ -1459,18 +1497,31 @@ export class HighlighterBook extends HTMLElement {
   /**
    * How the sheet must bend for its corner to show exactly at P, where the hand (or the spring) has it: a few Newton steps
    * from the last answer, so the corner stays under the finger whatever the paper does on the way.
+   *
+   * Where the paper can't follow (a corner held up high as the sheet comes down onto the coil, where the bend has to
+   * straighten out along the binding) the bend slants as far as the coil lets it, and the sheet goes on turning with the
+   * hand: the corner keeps level with it across the page and slides down towards where it will land, rather than
+   * stopping short and dropping flat later. The answer only ever moves as far as the hand does, so nothing drawn from it
+   * (the curl's light and shadows) can jump about from one frame to the next.
    */
   private solve(f: Flip, C: Pt, W: number, H: number): Pt {
-    const P = f.P;
+    // The corner can be pulled into the page, not out past the edge it lies on
+    const P = { x: f.P.x, y: C.y > 0 ? Math.min(f.P.y, C.y) : Math.max(f.P.y, C.y) };
     if (len(sub(P, C)) < 0.5) return (f.Q = { ...P });
     const at = (q: Pt): Pt => {
       const b = this.bend(q, C, W, H);
       return b ? ap(b.outer, C) : q;
     };
+    const ok = (q: Pt) => slantOk(q, C, H);
     // Start from last frame's answer; right at the corner the bend has no direction yet, so start from P (a small
     // curl barely lifts the sheet, so there the two are nearly the same)
-    let Q = f.Q && len(sub(f.Q, C)) > 1 ? f.Q : { ...P };
-    for (let i = 0; i < 12; i++) {
+    const Q0 = f.Q && len(sub(f.Q, C)) > 1 ? f.Q : { ...P };
+    let Q = Q0;
+    if (!ok(Q)) {
+      const c = creaseOf(Q, C, H);
+      Q = c.n.x > LEVEL ? slantQ(c.mid, Math.sign(c.n.y) || 1, C, H) : { x: C.x - 1, y: C.y };
+    }
+    for (let i = 0; i < 16; i++) {
       const r = at(Q);
       const ex = r.x - P.x;
       const ey = r.y - P.y;
@@ -1481,8 +1532,7 @@ export class HighlighterBook extends HTMLElement {
       const b = (ry.x - r.x) * 2;
       const c = (rx.y - r.y) * 2;
       const d = (ry.y - r.y) * 2;
-      // Damped Gauss-Newton: also settles where the paper can reach when the hand asks for more (a corner held up high
-      // as the sheet comes down along the binding)
+      // Damped Gauss-Newton
       const lam = 1e-4 * (a * a + b * b + c * c + d * d) + 1e-9;
       const m11 = a * a + c * c + lam;
       const m12 = a * b + c * d;
@@ -1498,8 +1548,45 @@ export class HighlighterBook extends HTMLElement {
         dx *= 80 / m;
         dy *= 80 / m;
       }
-      Q = { x: Q.x + dx, y: Q.y + dy };
+      if (ok({ x: Q.x + dx, y: Q.y + dy })) {
+        Q = { x: Q.x + dx, y: Q.y + dy };
+        continue;
+      }
+      // That would slant the bend more than the coil lets it this near the binding: go only as far as the limit...
+      let lo = 0;
+      let hi = 1;
+      for (let j = 0; j < 12; j++) {
+        const t = (lo + hi) / 2;
+        if (ok({ x: Q.x + dx * t, y: Q.y + dy * t })) lo = t;
+        else hi = t;
+      }
+      const edge = { x: Q.x + dx * lo, y: Q.y + dy * lo };
+      const ce = creaseOf(edge, C, H);
+      if (!(ce.n.x > LEVEL && slantLimit(ce.mid, H) < LEVEL_TAN)) {
+        Q = edge;
+        continue;
+      }
+      // ...and slide along it, to where the corner is level with the hand across the page (no further out than the limit
+      // reaches: beyond that the next step finds the way)
+      const side = Math.sign(ce.n.y) || 1;
+      let mid = ce.mid;
+      for (let j = 0; j < 12; j++) {
+        const x0 = at(slantQ(mid, side, C, H)).x - P.x;
+        const x1 = at(slantQ(mid + 0.25, side, C, H)).x - P.x;
+        const slope = (x1 - x0) / 0.25;
+        if (!(Math.abs(slope) > 1e-6)) break;
+        const step = Math.max(-60, Math.min(60, x0 / slope));
+        const next = Math.max(-5, Math.min(C.x, mid - step));
+        if (slantLimit(next, H) >= LEVEL_TAN) break;
+        mid = next;
+        if (Math.abs(step) < 1e-4) break;
+      }
+      const Qs = slantQ(mid, side, C, H);
+      const moved = len(sub(Qs, Q));
+      Q = Qs;
+      if (moved < 1e-3) break;
     }
+    if (!(Number.isFinite(Q.x) && Number.isFinite(Q.y))) Q = Q0;
     f.Q = Q;
     return Q;
   }
