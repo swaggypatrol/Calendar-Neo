@@ -121,6 +121,9 @@ const HOLE_U = HALF + HOLE_INSET;
 const WIRE_Z = 7;
 const WIRE_R = Math.hypot(HOLE_U, WIRE_Z);
 const WIRE_A0 = -Math.atan2(WIRE_Z, HOLE_U);
+/** The bend straightens out along the binding as it comes this close to it (px from the coil's axis, at mid-height). */
+const STRAIGHT_FROM = 100;
+const STRAIGHT_BY = 34;
 /** Where the light comes from: the upper left, a little in front. */
 const LIGHT = (() => {
   const l = Math.hypot(0.35, 0.45, 1);
@@ -692,8 +695,11 @@ export class HighlighterBook extends HTMLElement {
     this.$backTint = q('.turn.back .tint');
     this.$pen = q('.tool.pen');
     this.$eraser = q('.tool.eraser');
-    this.$pen.addEventListener('click', () => this.pickTool('highlight'));
-    this.$eraser.addEventListener('click', () => this.pickTool('erase'));
+    for (const [el, t] of [[this.$pen, 'highlight'], [this.$eraser, 'erase']] as const) {
+      el.addEventListener('click', () => this.pickTool(t));
+      // A finger or pen picks it up as soon as it lifts, without waiting for the browser to turn the tap into a click
+      el.addEventListener('pointerup', (e) => e.pointerType !== 'mouse' && this.pickTool(t));
+    }
 
     for (let i = 0; i < 6; i++) {
       const c = document.createElement('highlighter-calendar');
@@ -1377,8 +1383,20 @@ export class HighlighterBook extends HTMLElement {
     const d = sub(C, Q);
     const dl = len(d);
     if (dl < 0.5) return null;
-    const n = { x: d.x / dl, y: d.y / dl };
-    const k = (dot(n, C) + dot(n, Q)) / 2;
+    let n = { x: d.x / dl, y: d.y / dl };
+    let k = (dot(n, C) + dot(n, Q)) / 2;
+    // Nearing the binding the bend straightens out along it: the coil holds the sheet's whole edge, so the paper can't
+    // stay folded on a slant there (one end of it would be pulled through the coil)
+    const at = Math.abs(n.x) > 1e-6 ? (k - n.y * (H / 2)) / n.x : HALF + W;
+    const t = clamp01((STRAIGHT_FROM - at) / (STRAIGHT_FROM - STRAIGHT_BY));
+    const w = t * t * (3 - 2 * t);
+    if (w > 0) {
+      const nx = n.x * (1 - w) + w;
+      const ny = n.y * (1 - w);
+      const m = Math.hypot(nx, ny);
+      n = { x: nx / m, y: ny / m };
+      k = n.x * at + n.y * (H / 2);
+    }
     const rect: Pt[] = [
       { x: HALF, y: 0 },
       { x: HALF + W, y: 0 },
@@ -1452,21 +1470,29 @@ export class HighlighterBook extends HTMLElement {
     // Start from last frame's answer; right at the corner the bend has no direction yet, so start from P (a small
     // curl barely lifts the sheet, so there the two are nearly the same)
     let Q = f.Q && len(sub(f.Q, C)) > 1 ? f.Q : { ...P };
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
       const r = at(Q);
       const ex = r.x - P.x;
       const ey = r.y - P.y;
-      if (Math.abs(ex) + Math.abs(ey) < 0.05) break;
+      if (Math.abs(ex) + Math.abs(ey) < 0.005) break;
       const rx = at({ x: Q.x + 0.5, y: Q.y });
       const ry = at({ x: Q.x, y: Q.y + 0.5 });
       const a = (rx.x - r.x) * 2;
       const b = (ry.x - r.x) * 2;
       const c = (rx.y - r.y) * 2;
       const d = (ry.y - r.y) * 2;
-      const det = a * d - b * c;
-      if (Math.abs(det) < 1e-9) break;
-      let dx = (b * ey - d * ex) / det;
-      let dy = (c * ex - a * ey) / det;
+      // Damped Gauss-Newton: also settles where the paper can reach when the hand asks for more (a corner held up high
+      // as the sheet comes down along the binding)
+      const lam = 1e-4 * (a * a + b * b + c * c + d * d) + 1e-9;
+      const m11 = a * a + c * c + lam;
+      const m12 = a * b + c * d;
+      const m22 = b * b + d * d + lam;
+      const g1 = a * ex + c * ey;
+      const g2 = b * ex + d * ey;
+      const det = m11 * m22 - m12 * m12;
+      if (Math.abs(det) < 1e-12) break;
+      let dx = -(m22 * g1 - m12 * g2) / det;
+      let dy = -(m11 * g2 - m12 * g1) / det;
       const m = Math.hypot(dx, dy);
       if (m > 80) {
         dx *= 80 / m;
@@ -1541,13 +1567,14 @@ export class HighlighterBook extends HTMLElement {
     const L = { x: mir(LIGHT.x), y: LIGHT.y, z: LIGHT.z };
     const nIn = up ? { x: -sa, y: 0, z: ca } : { x: sa, y: 0, z: -ca };
     const nOut = { x: -ca * sa + sa * ca * n.x, y: sa * n.y, z: ca * ca + sa * sa * n.x };
-    const shade = (v: { x: number; y: number; z: number }) => {
+    // (Paper is never darker than a soft shade: it is lit from all round, not only by the one light)
+    const shade = (v: { x: number; y: number; z: number }, most: number) => {
       const lit = (v.x * L.x + v.y * L.y + v.z * L.z) / L.z;
-      return lit < 1 ? `rgba(0,0,0,${Math.min(0.5, 0.45 * (1 - lit)).toFixed(3)})` : `rgba(255,255,255,${Math.min(0.3, 0.3 * (lit - 1)).toFixed(3)})`;
+      return lit < 1 ? `rgba(0,0,0,${Math.min(most, 0.3 * (1 - lit)).toFixed(3)})` : `rgba(255,255,255,${Math.min(0.25, 0.25 * (lit - 1)).toFixed(3)})`;
     };
-    this.$frontTint.style.background = up ? shade(nIn) : 'transparent';
-    this.$marginTint.style.background = up ? 'transparent' : shade(nIn);
-    this.$backTint.style.background = shade(nOut);
+    this.$frontTint.style.background = up ? shade(nIn, 0.16) : 'transparent';
+    this.$marginTint.style.background = up ? 'transparent' : shade(nIn, 0.1);
+    this.$backTint.style.background = shade(nOut, 0.2);
 
     // Who is on top at the spine, by height: paper and metal are both opaque. The coil's wire arches over the spine,
     // highest along the middle; the pen and eraser lie inside it, lower. Each part of the sheet covers them where it is the
@@ -1627,6 +1654,12 @@ export class HighlighterBook extends HTMLElement {
     // This side: darker near the bend where the paper curls up
     if (up) this.strip(this.$front, toFront(A), toFront(B), toFront(Q), 26 + 30 * curl, `rgba(0,0,0,${((0.22 * curl + 0.05) * lifted).toFixed(3)}), transparent`);
     else (this.$front.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
+    // Past upright, the strip by the binding is paper rolling over the coil: lit along the top of the roll (the bend),
+    // falling into soft shade down towards the coil
+    if (!up) {
+      const band = Math.max(2, (k - n.y * (H / 2)) / Math.max(1e-6, n.x) - HALF);
+      this.strip(this.$margin, toBack(A), toBack(B), toBack({ x: HALF, y: H / 2 }), band, 'rgba(255,255,255,0.45), rgba(255,255,255,0) 45%, rgba(0,0,0,0.1)');
+    } else (this.$margin.querySelector(':scope > .fx > .strip') as HTMLElement).style.visibility = 'hidden';
     // The folded-over part: a highlight at the top of the curl, fading darker outwards
     this.strip(
       this.$back,
