@@ -161,7 +161,7 @@ header {
   justify-content: space-between;
   margin: 0 2px calc(var(--hc-num) * 0.618);
 }
-.title { font-weight: 650; font-size: calc(var(--hc-num) * 1.618); letter-spacing: -0.01em; }
+.title { font-family: var(--hc-title-font, inherit); font-weight: 650; font-size: calc(var(--hc-num) * 1.618); letter-spacing: var(--hc-title-spacing, -0.01em); }
 .nav {
   appearance: none;
   border: 0;

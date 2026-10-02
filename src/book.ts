@@ -415,6 +415,10 @@ highlighter-calendar {
   --hc-coat-feather: none;
   --hc-print: var(--hb-print);
   --hc-num: calc(0.875rem * var(--hb-scale, 1));
+  /* The month's name set in a Mincho, as a Japanese printed calendar would be: fonts every system already has (Hiragino on
+     Apple, Yu Mincho on Windows, Noto Serif CJK on Android and Linux), nothing to download */
+  --hc-title-font: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", "Source Han Serif JP", "MS PMincho", serif;
+  --hc-title-spacing: 0.06em;
 }
 /* finish="velvet": a soft pile, a shade deeper than the paper, catching a little light along the top */
 :host([finish="velvet"]) highlighter-calendar {
