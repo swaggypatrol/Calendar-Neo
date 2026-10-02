@@ -165,6 +165,10 @@ const STYLE = /* css */ `
 :host([open]) .panel { visibility: visible; }
 /* On a small screen the calendar opens over the whole page, as large as fits: upright (pages turning up and down) on a
    tall screen, side by side on a wide one. A tap outside the book closes it */
+/* Continuous corners (Apple's) where the browser draws them; the round buttons stay circles */
+@supports (corner-shape: squircle) {
+  .pill, .panel { corner-shape: squircle; }
+}
 .panel.compact {
   position: fixed;
   inset: 0;

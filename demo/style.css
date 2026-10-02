@@ -86,6 +86,12 @@ input[type="range"] { width: 100%; }
 .clear:hover { background: var(--line); }
 .out { margin-top: 28px; background: var(--card); border-radius: 16px; padding: 16px; border: 1px solid var(--line); }
 .ranges { margin: 0 0 10px; line-height: 1.6; }
+/* Continuous corners (Apple's) where the browser draws them, a little larger to match; circles stay circles */
+@supports (corner-shape: squircle) {
+  .bar, .bar .go, .panel, .seg, .clear, .out, pre { corner-shape: squircle; }
+  .panel, .out { border-radius: 26px; }
+  .seg, .clear, pre { border-radius: 16px; }
+}
 pre {
   margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg);
   font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;

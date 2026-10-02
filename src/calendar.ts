@@ -85,12 +85,19 @@ const inset = (pts: Pt[], d: number): Pt[] => {
   });
 };
 
-/** A closed path through the points, every corner rounded off (as far as the edges either side of it allow). */
+/** Apple's continuous corners (iOS): how far the curve's easing into the straight edge is drawn out (0 a plain arc). */
+const SMOOTHING = 0.6;
+
+/**
+ * A closed path through the points, every corner rounded off the way Apple rounds them (a "continuous" corner, as on the
+ * iPhone itself and in its SDKs): the curvature grows smoothly out of each straight edge into a short circular arc and
+ * back, so the outline has no kink in curvature anywhere (G2), unlike a plain quarter circle. The corner of nominal
+ * radius r takes (1 + SMOOTHING)·r of each edge, or as much as the edges either side allow.
+ */
 const rounded = (pts: Pt[], radius: number): string => {
   const n = pts.length;
-  // (a quarter circle, as a cubic)
-  const K = 0.5523;
-  const f = (v: number) => v.toFixed(1);
+  const f = (v: number) => v.toFixed(2);
+  const rad = (deg: number) => (deg * Math.PI) / 180;
   let d = '';
   for (let k = 0; k < n; k++) {
     const [px, py] = pts[(k + n - 1) % n];
@@ -98,12 +105,30 @@ const rounded = (pts: Pt[], radius: number): string => {
     const [nx, ny] = pts[(k + 1) % n];
     const l1 = Math.hypot(x - px, y - py) || 1;
     const l2 = Math.hypot(nx - x, ny - y) || 1;
-    const r = Math.max(0, Math.min(radius, l1 / 2, l2 / 2));
     const [ux, uy] = [(x - px) / l1, (y - py) / l1];
     const [vx, vy] = [(nx - x) / l2, (ny - y) / l2];
-    const [sx, sy] = [x - ux * r, y - uy * r];
-    const [ex, ey] = [x + vx * r, y + vy * r];
-    d += `${k ? 'L' : 'M'}${f(sx)} ${f(sy)}C${f(sx + ux * r * K)} ${f(sy + uy * r * K)} ${f(ex - vx * r * K)} ${f(ey - vy * r * K)} ${f(ex)} ${f(ey)}`;
+    // (the same easing as Figma's "corner smoothing", which follows Apple's: limited by the room each edge has)
+    const room = Math.min(l1, l2) / 2;
+    const r = Math.max(0, Math.min(radius, room));
+    const s = r > 0 ? Math.max(0, Math.min(SMOOTHING, room / r - 1)) : 0;
+    const p = Math.min((1 + s) * r, room);
+    const arcDeg = 90 * (1 - s);
+    const arc = Math.sin(rad(arcDeg / 2)) * r * Math.SQRT2;
+    const alpha = (90 - arcDeg) / 2;
+    const p3p4 = r * Math.tan(rad(alpha / 2));
+    const beta = 45 * s;
+    const c = p3p4 * Math.cos(rad(beta));
+    const dd = c * Math.tan(rad(beta));
+    const b = (p - arc - c - dd) / 3;
+    const a = 2 * b;
+    // In the corner's own frame: along the incoming edge (u) and along the outgoing one (v)
+    const at = (i: number, j: number) => `${f(x - ux * p + ux * i + vx * j)} ${f(y - uy * p + uy * i + vy * j)}`;
+    const sweep = ux * vy - uy * vx > 0 ? 1 : 0;
+    d +=
+      `${k ? 'L' : 'M'}${at(0, 0)}` +
+      `C${at(a, 0)} ${at(a + b, 0)} ${at(a + b + c, dd)}` +
+      `A${f(r)} ${f(r)} 0 0 ${sweep} ${at(a + b + c + arc, dd + arc)}` +
+      `C${at(p, p - a - b)} ${at(p, p - a)} ${at(p, p)}`;
   }
   return `${d}Z`;
 };
@@ -120,7 +145,10 @@ const STYLE = /* css */ `
   --hc-muted: #8a9099;
   --hc-line: rgba(20, 30, 50, 0.07);
   --hc-accent: #e8590c;
-  --hc-radius: calc(var(--hc-num) * 0.618);
+  /* Corners: continuous (Apple's, curvature easing in from the edge) where the browser can draw them, with the radius
+     drawn out to match the extent of the plain arcs they replace */
+  --hc-k: 1;
+  --hc-radius: calc(var(--hc-num) * 0.618 * var(--hc-k));
   --hc-gap: 4px;
   display: inline-block;
   width: 22rem;
@@ -149,7 +177,7 @@ const STYLE = /* css */ `
   user-select: none;
   -webkit-user-select: none;
   background: var(--hc-bg);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--hc-k));
   padding: 14px 14px 12px;
   box-sizing: border-box;
 }
@@ -169,7 +197,7 @@ header {
   color: inherit;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--hc-k));
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
@@ -329,7 +357,11 @@ canvas {
 .cursor.erase {
   background: rgba(255, 255, 255, 0.35);
   border: 1.5px dashed var(--hc-muted);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--hc-k));
+}
+@supports (corner-shape: squircle) {
+  :host { --hc-k: 1.6; }
+  .hc, .nav, .day, .cursor.erase { corner-shape: squircle; }
 }
 `;
 

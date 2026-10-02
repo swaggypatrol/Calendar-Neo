@@ -330,6 +330,12 @@ const STYLE = /* css */ `
 }
 .shape-l { border-radius: 10px 2px 2px 10px; padding-right: ${MARGIN_INNER}px; }
 .shape-r { border-radius: 2px 10px 10px 2px; padding-left: ${MARGIN_INNER}px; }
+/* Continuous corners (Apple's) where the browser draws them: the pages, their layers, the bookmarks */
+@supports (corner-shape: squircle) {
+  .page, .mark { corner-shape: squircle; }
+  .shape-l { border-radius: 16px 3px 3px 16px; }
+  .shape-r { border-radius: 3px 16px 16px 3px; }
+}
 /* Above the bookmark tabs: a tab sticks out from under the sheets lying on top of its own */
 .page { z-index: 1; transition: box-shadow 0.45s; }
 .page.left { box-shadow: var(--edges-left, none), -6px 14px 28px -10px var(--hb-shadow); }
