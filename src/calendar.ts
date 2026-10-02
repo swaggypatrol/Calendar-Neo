@@ -180,13 +180,22 @@ header {
 /* Days already past (and the title of a month that is all past) are printed in grey */
 .title.past, .day.past { color: var(--hc-muted); }
 .nav:focus-visible { outline: 2px solid var(--hc-accent); }
+/* The weekday letters stand clear of the days: 1 : √2 of a day number above where the coat round them begins (the
+   silver ratio, the proportion of a sheet of A4) */
 .weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: var(--hc-gap);
-  margin-bottom: 4px;
+  margin-bottom: calc(var(--hc-num) / 1.414 + ${COAT_PAD}px);
 }
 .weekdays span { text-align: center; font-size: calc(var(--hc-num) / 1.272); color: var(--hc-muted); }
+/* weekdays="en-ja": each day's kanji, with its English name small beneath; Sunday in red and Saturday in blue, as on a
+   Japanese calendar */
+.weekdays.en-ja span { display: grid; gap: 2px; line-height: 1; }
+.weekdays.en-ja b { font-weight: 500; font-size: calc(var(--hc-num) * 0.93); }
+.weekdays.en-ja i { font-style: normal; font-size: calc(var(--hc-num) * 0.5); letter-spacing: 0.1em; opacity: 0.85; }
+.weekdays.en-ja .sun { color: color-mix(in srgb, #c8463a 75%, var(--hc-muted)); }
+.weekdays.en-ja .sat { color: color-mix(in srgb, #3a6fc8 75%, var(--hc-muted)); }
 /* The ink needs room round the grid, but only the days themselves take the pen: a press anywhere else (a blank cell, the
    title, just outside the grid) is not a stroke. In a book, that is where the page is taken hold of to turn it */
 .wrap {
@@ -369,6 +378,7 @@ export class HighlighterCalendar extends HTMLElement {
     'min',
     'max',
     'coat',
+    'weekdays',
   ];
 
   readonly engine = new HighlighterEngine();
@@ -511,6 +521,9 @@ export class HighlighterCalendar extends HTMLElement {
       case 'max':
         this.range.set(name, v);
         this.applyRange();
+        break;
+      case 'weekdays':
+        this.render();
         break;
       case 'coat':
         // Laid again (glass bends what is under it by a map of its shape)
@@ -665,11 +678,25 @@ export class HighlighterCalendar extends HTMLElement {
     this.$grid.setAttribute('aria-label', this.$title.textContent);
 
     const wd = new Intl.DateTimeFormat(this.locale, { weekday: 'narrow' });
+    const ja = new Intl.DateTimeFormat('ja', { weekday: 'narrow' });
+    const en = new Intl.DateTimeFormat('en', { weekday: 'short' });
+    const both = this.getAttribute('weekdays') === 'en-ja';
+    this.$weekdays.classList.toggle('en-ja', both);
     this.$weekdays.innerHTML = '';
     for (let i = 0; i < 7; i++) {
       const s = document.createElement('span');
       // 2023-01-01 was a Sunday
-      s.textContent = wd.format(new Date(2023, 0, 1 + ((this.weekStart + i) % 7)));
+      const n = (this.weekStart + i) % 7;
+      const day = new Date(2023, 0, 1 + n);
+      if (both) {
+        const b = document.createElement('b');
+        const e = document.createElement('i');
+        b.textContent = ja.format(day);
+        e.textContent = en.format(day).toUpperCase();
+        s.append(b, e);
+        s.classList.toggle('sun', n === 0);
+        s.classList.toggle('sat', n === 6);
+      } else s.textContent = wd.format(day);
       this.$weekdays.append(s);
     }
 

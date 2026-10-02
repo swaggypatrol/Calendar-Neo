@@ -502,7 +502,7 @@ highlighter-calendar {
 .corner:focus { outline: none; }
 .corner:focus-visible { outline: 2px solid color-mix(in srgb, var(--hb-ink) 70%, transparent); outline-offset: -10px; border-radius: 14px; }
 /* Bookmarks: one per month, always the same element. When its page isn't open it is a tab sticking out from the fore-edge,
-   from under the sheets lying on top of its own; when its page is open it slides into the page and becomes a swallowtail
+   from under the sheets lying on top of its own; when its page is open it slides into the page and becomes a round-ended
    ribbon lying on it, hanging from the top (under any sheet turning over it). Every change is animated; nothing jumps */
 .mark {
   position: absolute;
@@ -813,6 +813,8 @@ export class HighlighterBook extends HTMLElement {
       c.setAttribute('hide-nav', '');
       // (frosted glass, the default finish, is real glass over the paper)
       c.setAttribute('coat', 'glass');
+      // (for a Japanese site: weekdays in kanji, with English beneath)
+      c.setAttribute('weekdays', 'en-ja');
       c.addEventListener('input', () => this.sync(c));
       c.addEventListener('change', () => this.sync(c));
       c.addEventListener('monthchange', (e) => {
@@ -2006,7 +2008,7 @@ export class HighlighterBook extends HTMLElement {
     const W = this.$right.offsetWidth || 394;
     const H = this.$right.offsetHeight || 350;
     const spreadW = 2 * W + SPINE;
-    // Golden proportions: a tab is t thick and t·φ long; a ribbon is t wide and t·φ² long, its swallowtail cut t/φ deep
+    // Golden proportions: a tab is t thick and t·φ long; a ribbon is t wide and t·φ² long, its foot rounded (the count kept as clear of it as a cut t/φ deep would)
     const t = 18;
     const tabW = Math.round(t * PHI);
     const ribL = Math.round(t * PHI * PHI);
@@ -2059,8 +2061,9 @@ export class HighlighterBook extends HTMLElement {
           width: `${t}px`,
           height: `${ribL}px`,
           padding: `${Math.round((ribL - notch) / PHI - 5)}px 0px 0px`,
-          radius: '0px',
-          clip: `polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - ${notch}px), 0 100%)`,
+          // (rounded off at its foot, like everything else here)
+          radius: `0 0 ${t / 2}px ${t / 2}px`,
+          clip: 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 0 100%)',
           right: k > m,
         };
       } else {
@@ -2078,7 +2081,7 @@ export class HighlighterBook extends HTMLElement {
           height: `${t}px`,
           // The count is centred on the part that sticks out
           padding: right ? `${(t - 10) / 2}px 0px 0px 4px` : `${(t - 10) / 2}px 4px 0px 0px`,
-          radius: right ? '0 6px 6px 0' : '6px 0 0 6px',
+          radius: right ? `0 ${t / 2}px ${t / 2}px 0` : `${t / 2}px 0 0 ${t / 2}px`,
           clip: 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 0 100%)',
           right,
         };
