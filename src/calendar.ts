@@ -196,19 +196,25 @@ header {
   cursor: crosshair;
 }
 /* A coat laid over the days alone, its edge following them (the weeks' runs of days, the gaps between them included):
-   nothing by default; in a book, a glossy varnish (--hc-coat its face, --hc-coat-rim the light along its edge). Shaped
-   once the days are laid out; until then it covers nothing */
+   nothing by default; in a book, frosted glass, velvet or a glossy varnish (--hc-coat its face, --hc-coat-rim a rim
+   along its edge, --hc-coat-feather a filter softening that edge into the paper). Shaped once the days are laid out;
+   until then it covers nothing */
 .coat {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  clip-path: var(--coat-edge, inset(50%));
-  background: var(--hc-coat-rim, none);
+  filter: var(--hc-coat-feather, none);
 }
-.coat::before {
+.coat::before, .coat::after {
   content: '';
   position: absolute;
   inset: 0;
+}
+.coat::before {
+  clip-path: var(--coat-edge, inset(50%));
+  background: var(--hc-coat-rim, none);
+}
+.coat::after {
   clip-path: var(--coat-face, inset(50%));
   background: var(--hc-coat, none);
 }

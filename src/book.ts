@@ -186,16 +186,21 @@ const slantQ = (mid: number, side: number, C: Pt, H: number): Pt => {
  * The tooth of soft-touch matte paper, the page round the days: a fine, even stipple (darker on light paper, lighter on
  * dark) that looks as if it would grip the finger turning the page.
  */
-const tooth = (r: number, g: number, b: number, a: number) => {
+const tooth = (r: number, g: number, b: number, a: number, freq = 1.15) => {
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120">` +
-    `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="2" stitchTiles="stitch"/>` +
+    `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="2" stitchTiles="stitch"/>` +
     `<feColorMatrix values="0 0 0 0 ${r}  0 0 0 0 ${g}  0 0 0 0 ${b}  0 0 0 ${a} ${(-a * 0.46).toFixed(3)}"/></filter>` +
     `<rect width="100%" height="100%" filter="url(#n)"/></svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 };
 const TOOTH_LIGHT = tooth(0.36, 0.29, 0.19, 0.6);
 const TOOTH_DARK = tooth(0.88, 0.88, 0.85, 0.32);
+/** The finer, softer grain over the days: the frost of frosted glass, or the pile of velvet. */
+const FROST_LIGHT = tooth(1, 1, 1, 0.5, 2.2);
+const FROST_DARK = tooth(1, 1, 1, 0.14, 2.2);
+const PILE_LIGHT = tooth(0.4, 0.32, 0.22, 0.36, 2.6);
+const PILE_DARK = tooth(0.92, 0.92, 0.9, 0.16, 2.6);
 /** How far beside the wire its shadow falls on the paper. */
 const WIRE_SHADOW = 3.5;
 /** Room above and below the pages for the coil's ends (and their shadows), and round the book for the bookmarks. */
@@ -241,6 +246,12 @@ const DARK_VARS = /* css */ `
     --hb-hole-rim: rgba(0, 0, 0, 0.35);
     --hb-hollow: rgba(0, 0, 0, 0.42);
     --hb-tooth: ${TOOTH_DARK};
+    --hb-frost: rgba(60, 64, 71, 0.88);
+    --hb-frost-light: rgba(255, 255, 255, 0.045);
+    --hb-frost-grain: ${FROST_DARK};
+    --hb-velvet: #292c32;
+    --hb-velvet-sheen: rgba(255, 255, 255, 0.05);
+    --hb-pile: ${PILE_DARK};
     --hb-coat: #25282d;
     --hb-shine: rgba(255, 255, 255, 0.09);
     --hb-sheen-dim: rgba(0, 0, 0, 0.16);
@@ -259,6 +270,12 @@ const STYLE = /* css */ `
   --hb-hole-rim: rgba(58, 44, 26, 0.22);
   --hb-hollow: rgba(60, 45, 25, 0.2);
   --hb-tooth: ${TOOTH_LIGHT};
+  --hb-frost: rgba(255, 253, 249, 0.82);
+  --hb-frost-light: rgba(255, 255, 255, 0.6);
+  --hb-frost-grain: ${FROST_LIGHT};
+  --hb-velvet: #f0e9dc;
+  --hb-velvet-sheen: rgba(255, 255, 255, 0.55);
+  --hb-pile: ${PILE_LIGHT};
   --hb-coat: #f1ebe0;
   --hb-shine: rgba(255, 255, 255, 0.9);
   --hb-sheen-dim: rgba(90, 70, 40, 0.07);
@@ -379,19 +396,39 @@ const STYLE = /* css */ `
   top: 0;
   visibility: hidden;
 }
-/* The varnish over the days: deeper and smooth, with the light's reflection streaking across it, and a rim of light along
-   its edge where it catches the light (bright towards the light, shaded away from it) */
+/* What lies over the days (finish="frost", the default): frosted glass, milky and smooth over the paper's tooth, a soft
+   light from above, its edge feathered into the page so it barely stands apart from it */
 highlighter-calendar {
   display: block;
   width: var(--hc-card-width);
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
   --hc-coat:
+    var(--hb-frost-grain),
+    linear-gradient(to bottom, var(--hb-frost-light), transparent 55%),
+    var(--hb-frost);
+  --hc-coat-rim: none;
+  --hc-coat-feather: blur(2.5px);
+  --hc-num: calc(0.875rem * var(--hb-scale, 1));
+}
+/* finish="velvet": a soft pile, a shade deeper than the paper, catching a little light along the top */
+:host([finish="velvet"]) highlighter-calendar {
+  --hc-coat:
+    var(--hb-pile),
+    linear-gradient(to bottom, var(--hb-velvet-sheen), transparent 40%),
+    var(--hb-velvet);
+  --hc-coat-rim: none;
+  --hc-coat-feather: blur(2px);
+}
+/* finish="gloss": a varnish, deeper and smooth, the light's reflection streaking across it and a rim of light along its
+   edge (bright towards the light, shaded away from it) */
+:host([finish="gloss"]) highlighter-calendar {
+  --hc-coat-feather: none;
+  --hc-coat:
     linear-gradient(122deg, transparent 11%, var(--hb-shine) 20%, var(--hb-shine) 24%, transparent 33%, transparent 71%, color-mix(in srgb, var(--hb-shine) 50%, transparent) 78%, transparent 84%),
     linear-gradient(to bottom, color-mix(in srgb, var(--hb-shine) 30%, transparent), transparent 45%, transparent 70%, var(--hb-sheen-dim)),
     var(--hb-coat);
   --hc-coat-rim: linear-gradient(135deg, var(--hb-rim-light), color-mix(in srgb, var(--hb-rim-light) 45%, transparent) 50%, var(--hb-rim-dark));
-  --hc-num: calc(0.875rem * var(--hb-scale, 1));
 }
 /* The spine: the gap between the pages and the coil over it. The coil runs through the holes of every sheet lying open, so
    it is drawn over them; a sheet lifted to turn rises above it and covers it, except along its own punched edge, which

@@ -187,7 +187,7 @@ const STYLE = /* css */ `
 }
 `;
 
-const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value', 'min', 'max', 'theme'];
+const FORWARDED = ['threshold', 'week-start', 'locale', 'color', 'tool', 'brush-size', 'hold-delay', 'value', 'min', 'max', 'theme', 'finish'];
 
 /**
  * <highlighter-picker>: a date field for booking sites.
