@@ -246,7 +246,9 @@ const DARK_VARS = /* css */ `
     --hb-hole-rim: rgba(0, 0, 0, 0.35);
     --hb-hollow: rgba(0, 0, 0, 0.42);
     --hb-tooth: ${TOOTH_DARK};
-    --hb-frost: rgba(60, 64, 71, 0.88);
+    --hb-frost: rgba(60, 64, 71, 0.38);
+    --hb-frost-rim: rgba(255, 255, 255, 0.14);
+    --hb-print: rgba(255, 210, 31, 0.13);
     --hb-frost-light: rgba(255, 255, 255, 0.045);
     --hb-frost-grain: ${FROST_DARK};
     --hb-velvet: #292c32;
@@ -270,7 +272,9 @@ const STYLE = /* css */ `
   --hb-hole-rim: rgba(58, 44, 26, 0.22);
   --hb-hollow: rgba(60, 45, 25, 0.2);
   --hb-tooth: ${TOOTH_LIGHT};
-  --hb-frost: rgba(255, 253, 249, 0.82);
+  --hb-frost: rgba(255, 253, 249, 0.42);
+  --hb-frost-rim: rgba(255, 255, 255, 0.85);
+  --hb-print: rgba(214, 160, 40, 0.16);
   --hb-frost-light: rgba(255, 255, 255, 0.6);
   --hb-frost-grain: ${FROST_LIGHT};
   --hb-velvet: #f0e9dc;
@@ -407,8 +411,9 @@ highlighter-calendar {
     var(--hb-frost-grain),
     linear-gradient(to bottom, var(--hb-frost-light), transparent 55%),
     var(--hb-frost);
-  --hc-coat-rim: none;
-  --hc-coat-feather: blur(2.5px);
+  --hc-coat-rim: linear-gradient(to bottom, var(--hb-frost-rim), transparent 70%);
+  --hc-coat-feather: none;
+  --hc-print: var(--hb-print);
   --hc-num: calc(0.875rem * var(--hb-scale, 1));
 }
 /* finish="velvet": a soft pile, a shade deeper than the paper, catching a little light along the top */
@@ -419,11 +424,13 @@ highlighter-calendar {
     var(--hb-velvet);
   --hc-coat-rim: none;
   --hc-coat-feather: blur(2px);
+  --hc-print: transparent;
 }
 /* finish="gloss": a varnish, deeper and smooth, the light's reflection streaking across it and a rim of light along its
    edge (bright towards the light, shaded away from it) */
 :host([finish="gloss"]) highlighter-calendar {
   --hc-coat-feather: none;
+  --hc-print: transparent;
   --hc-coat:
     linear-gradient(122deg, transparent 11%, var(--hb-shine) 20%, var(--hb-shine) 24%, transparent 33%, transparent 71%, color-mix(in srgb, var(--hb-shine) 50%, transparent) 78%, transparent 84%),
     linear-gradient(to bottom, color-mix(in srgb, var(--hb-shine) 30%, transparent), transparent 45%, transparent 70%, var(--hb-sheen-dim)),
@@ -695,7 +702,7 @@ interface Wheel {
  * Attributes and input / change events are the same as <highlighter-calendar>; it also has month (the left page's month) and next() / prev().
  */
 export class HighlighterBook extends HTMLElement {
-  static observedAttributes = ['month', 'value', 'layout', ...FORWARDED];
+  static observedAttributes = ['month', 'value', 'layout', 'finish', ...FORWARDED];
 
   private $book: HTMLElement;
   /** The spread with its corners and bookmarks: as it is, or mirrored across its diagonal in the upright layout. */
@@ -800,6 +807,8 @@ export class HighlighterBook extends HTMLElement {
     for (let i = 0; i < 6; i++) {
       const c = document.createElement('highlighter-calendar');
       c.setAttribute('hide-nav', '');
+      // (frosted glass, the default finish, is real glass over the paper)
+      c.setAttribute('coat', 'glass');
       c.addEventListener('input', () => this.sync(c));
       c.addEventListener('change', () => this.sync(c));
       c.addEventListener('monthchange', (e) => {
@@ -856,6 +865,13 @@ export class HighlighterBook extends HTMLElement {
   attributeChangedCallback(name: string, _old: string | null, v: string | null): void {
     if (name === 'month') {
       if (v) this.show(v);
+    } else if (name === 'finish') {
+      // Frosted (the default) is glass, which shows the paper under it; velvet and gloss are laid on it
+      const glass = !v || v === 'frost';
+      for (const c of this.pages) {
+        if (glass) c.setAttribute('coat', 'glass');
+        else c.removeAttribute('coat');
+      }
     } else if (name === 'layout') {
       const vertical = v === 'vertical';
       if (vertical === this.vertical) return;

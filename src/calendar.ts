@@ -34,6 +34,11 @@ const DOUBLE_TAP_MS = 400;
 /** How far the coat over the days reaches out beyond them (px), and the rim of light along its edge. */
 const COAT_PAD = 4;
 const COAT_RIM = 1;
+/** Glass over the days (coat="glass"): how far in from its edge it is curved (and bends what is seen through it), and how far that bends it at most (px). */
+const LENS_BEZEL = 9;
+const LENS_SHIFT = 7;
+/** Bending what is seen through it needs an SVG filter in backdrop-filter, which only Chromium draws; elsewhere the glass only blurs. */
+const CAN_BEND = typeof navigator !== 'undefined' && 'userAgentData' in navigator;
 
 type Pt = [number, number];
 interface Box {
@@ -218,6 +223,31 @@ header {
   clip-path: var(--coat-face, inset(50%));
   background: var(--hc-coat, none);
 }
+/* Glass (coat="glass"): what lies under it, blurred, and bent near its curved edge (where the browser can) */
+:host([coat="glass"]) .coat::after {
+  -webkit-backdrop-filter: blur(5px) saturate(1.3);
+  backdrop-filter: blur(5px) saturate(1.3);
+}
+:host([coat="glass"]) .coat.bend::after {
+  backdrop-filter: url(#lens) blur(4px) saturate(1.3);
+}
+.lens { position: absolute; width: 0; height: 0; }
+/* Printed on the paper under the days (--hc-print, nothing by default): the month's number, large, in the corner where a
+   month's last week leaves room, so it shows both beside the glass and through it */
+.print {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: end;
+  padding: 0 4px 0 0;
+  pointer-events: none;
+  font-size: calc(var(--hc-num) * 13);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  color: var(--hc-print, transparent);
+}
 .wrap.brush-cursor { cursor: none; }
 canvas {
   position: absolute;
@@ -304,7 +334,9 @@ const TEMPLATE = `
   </header>
   <div class="weekdays" part="weekdays"></div>
   <div class="wrap">
+    <div class="print" aria-hidden="true"></div>
     <div class="coat" part="coat"></div>
+    <svg class="lens" aria-hidden="true"><filter id="lens" filterUnits="userSpaceOnUse" x="0" y="0" width="0" height="0" color-interpolation-filters="sRGB"><feImage result="map" preserveAspectRatio="none" x="0" y="0" width="0" height="0"/><feDisplacementMap in="SourceGraphic" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
     <canvas></canvas>
     <div class="grid" role="grid"></div>
     <div class="cursor"></div>
@@ -336,6 +368,7 @@ export class HighlighterCalendar extends HTMLElement {
     'theme',
     'min',
     'max',
+    'coat',
   ];
 
   readonly engine = new HighlighterEngine();
@@ -348,6 +381,7 @@ export class HighlighterCalendar extends HTMLElement {
   private $wrap: HTMLElement;
   private $grid: HTMLElement;
   private $coat: HTMLElement;
+  private $print: HTMLElement;
   private $canvas: HTMLCanvasElement;
   private $cursor: HTMLElement;
   private $prev: HTMLButtonElement;
@@ -388,6 +422,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.$wrap = q('.wrap');
     this.$grid = q('.grid');
     this.$coat = q('.coat');
+    this.$print = q('.print');
     this.$canvas = q('canvas');
     this.$cursor = q('.cursor');
     this.$prev = q('.prev');
@@ -476,6 +511,11 @@ export class HighlighterCalendar extends HTMLElement {
       case 'max':
         this.range.set(name, v);
         this.applyRange();
+        break;
+      case 'coat':
+        // Laid again (glass bends what is under it by a map of its shape)
+        this.coatEdge = '';
+        this.measure();
         break;
     }
   }
@@ -619,6 +659,7 @@ export class HighlighterCalendar extends HTMLElement {
     this.$next.disabled = k >= this.range.maxMonth;
     const fmt = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'long' });
     this.$title.textContent = fmt.format(new Date(y, m, 1));
+    this.$print.textContent = String(m + 1);
     const now0 = new Date();
     this.$title.classList.toggle('past', k < now0.getFullYear() * 12 + now0.getMonth());
     this.$grid.setAttribute('aria-label', this.$title.textContent);
@@ -771,6 +812,56 @@ export class HighlighterCalendar extends HTMLElement {
     this.coatEdge = edge;
     this.$coat.style.setProperty('--coat-edge', `path('${edge}')`);
     this.$coat.style.setProperty('--coat-face', `path('${rounded(inset(outline, COAT_RIM), radius - COAT_RIM)}')`);
+    const bend = CAN_BEND && this.getAttribute('coat') === 'glass';
+    if (bend) this.shapeLens(edge);
+    this.$coat.classList.toggle('bend', bend);
+  }
+
+  /**
+   * The glass's curve, as a map for bending what is seen through it: its shape, blurred over LENS_BEZEL, rises from
+   * nothing outside to full height inside; where it slopes (round the edge) the view through it is pulled outwards, as
+   * light through a curved edge is, by up to LENS_SHIFT.
+   */
+  private shapeLens(edge: string): void {
+    const { w, h } = this.size;
+    const W = Math.ceil(w);
+    const H = Math.ceil(h);
+    if (!W || !H) return;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.filter = `blur(${LENS_BEZEL / 2}px)`;
+    ctx.fillStyle = '#fff';
+    ctx.fill(new Path2D(edge));
+    const src = ctx.getImageData(0, 0, W, H).data;
+    const at = (x: number, y: number) => src[(Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))) * 4] / 255;
+    const out = ctx.createImageData(W, H);
+    const d = out.data;
+    // the steepest the blurred edge gets, for scaling the slopes to the map's range
+    const steep = 1 / (LENS_BEZEL * 0.8);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const gx = (at(x + 1, y) - at(x - 1, y)) / 2;
+        const gy = (at(x, y + 1) - at(x, y - 1)) / 2;
+        const k = (y * W + x) * 4;
+        // (the slope points inwards; the view is pulled from outwards)
+        d[k] = 128 - Math.max(-127, Math.min(127, (gx / steep) * 127));
+        d[k + 1] = 128 - Math.max(-127, Math.min(127, (gy / steep) * 127));
+        d[k + 2] = 128;
+        d[k + 3] = 255;
+      }
+    }
+    ctx.filter = 'none';
+    ctx.putImageData(out, 0, 0);
+    const f = this.shadowRoot!.querySelector('#lens')!;
+    for (const el of [f, f.querySelector('feImage')!]) {
+      el.setAttribute('width', String(W));
+      el.setAttribute('height', String(H));
+    }
+    f.querySelector('feImage')!.setAttribute('href', c.toDataURL());
+    f.querySelector('feDisplacementMap')!.setAttribute('scale', String(LENS_SHIFT * 2));
   }
 
   /** How far the coat reaches out beyond the days: COAT_PAD, or further if the gaps between them are wider. */
