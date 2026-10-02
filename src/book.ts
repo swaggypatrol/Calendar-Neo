@@ -436,9 +436,10 @@ highlighter-calendar {
 .flap.l1 { z-index: 16; }
 .spine.over.b.l1 { z-index: 17; }
 /* The page corners: click (or press and pull) to turn. The right one is the real sheet, peeled back and breathing */
+/* At the top of the page, where the resting corner curls (upright, at the bottom: see .vertical below) */
 .corner {
   position: absolute;
-  bottom: 0;
+  top: 0;
   width: 72px;
   height: 72px;
   border: 0;
@@ -501,6 +502,7 @@ highlighter-calendar {
   transform-origin: 0 0;
 }
 .vertical .page, .vertical .turn { padding: ${MARGIN}px; }
+.vertical .corner { top: auto; bottom: 0; }
 .vertical .shape-l { padding-right: ${MARGIN_INNER}px; }
 .vertical .shape-r { padding-left: ${MARGIN_INNER}px; }
 .vertical .slot { position: relative; width: var(--cal-h, 330px); height: var(--hc-card-width); }
@@ -1069,13 +1071,14 @@ export class HighlighterBook extends HTMLElement {
   // ---------- The resting corner ----------
 
   /**
-   * At rest the right page's bottom corner is the actual sheet, peeled back a little and slowly breathing. Every turn
-   * (click, drag, swipe, bookmark) starts from this same corner, so the paper is one continuous sheet throughout.
+   * At rest the right page's top corner is the actual sheet, peeled back a little and slowly breathing (up there it
+   * covers no days: a month's last week, short, is at the bottom). Every turn (click, drag, swipe, bookmark) starts
+   * from this same corner, so the paper is one continuous sheet throughout.
    */
   private rest(): void {
     if (this.flip || this.settling || this.gesture || this.wheel || this.queue.length || !this.isConnected || !this.canFlip(1)) return;
     if (!this.$right.offsetWidth) return;
-    this.beginFlip(1, false);
+    this.beginFlip(1, this.restTop);
     this.flip!.idle = true;
     this.peel = 0;
     this.peelV = 0;
@@ -1098,13 +1101,22 @@ export class HighlighterBook extends HTMLElement {
   private restPoint(f: Flip): Pt {
     const C = this.corner(f);
     const p = this.peelTarget(performance.now());
-    return this.constrain(f, { x: C.x - p, y: C.y - p * 0.72 });
+    return this.constrain(f, { x: C.x - p, y: C.y + (f.top ? 1 : -1) * p * 0.72 });
+  }
+
+  /**
+   * Which corner pages are turned by when no hand chooses: the top one. Upright (layout="vertical") it is the bottom
+   * page's lower right corner instead (the top corner would be by the binding there), where the short last week of a
+   * month leaves the page bare.
+   */
+  private get restTop(): boolean {
+    return !this.vertical;
   }
 
   /** Pointing near the resting corner peels it back further, inviting a pull. */
   private hover(x: number, y: number): void {
     const r = this.$right.getBoundingClientRect();
-    this.peelHover = Math.hypot(r.right - x, r.bottom - y) < 110;
+    this.peelHover = Math.hypot(r.right - x, (this.restTop ? r.top : r.bottom) - y) < 110;
   }
 
   private idleTick = (now: number): void => {
@@ -1131,7 +1143,7 @@ export class HighlighterBook extends HTMLElement {
       this.peel += this.peelV * h;
     }
     const C = this.corner(f);
-    f.P = this.constrain(f, { x: C.x - this.peel, y: C.y - this.peel * 0.72 });
+    f.P = this.constrain(f, { x: C.x - this.peel, y: C.y + (f.top ? 1 : -1) * this.peel * 0.72 });
     this.render();
     this.idleRaf = requestAnimationFrame(this.idleTick);
   };
@@ -1182,7 +1194,7 @@ export class HighlighterBook extends HTMLElement {
       } else this.move('turn');
       return;
     }
-    this.beginFlip(dir, false);
+    this.beginFlip(dir, this.restTop);
     this.renderTabs(this.m + 2 * dir, false, true);
     if (riffle) {
       this.move('turn', { speed: RIFFLE_SPEED, accel: RIFFLE_ACCEL, v0: 0 });
@@ -1194,7 +1206,7 @@ export class HighlighterBook extends HTMLElement {
    * Turn the left page back while the right page's corner rests peeled: the corner drops back flat by itself (drawn with the
    * other leaf) and at the same moment the left page lifts, so a hand can take hold of it straight away, like the right one.
    */
-  private backOverCorner(f: Flip, top = false): void {
+  private backOverCorner(f: Flip, top = this.restTop): void {
     this.settleAway(f);
     this.beginFlip(-1, top, this.leaves[1]);
     this.renderTabs(this.m - 2, false, true);
@@ -1496,7 +1508,7 @@ export class HighlighterBook extends HTMLElement {
     while (this.queue.length) {
       const dir = this.queue.shift()!;
       if (!this.canFlip(dir)) continue;
-      this.beginFlip(dir, false);
+      this.beginFlip(dir, this.restTop);
       this.renderTabs(this.m + 2 * dir, false, true);
       if (this.queue.length) {
         this.move('turn', { speed: RIFFLE_SPEED, v0: carry, accel: RIFFLE_ACCEL });
@@ -1942,9 +1954,10 @@ export class HighlighterBook extends HTMLElement {
     const tabW = Math.round(t * PHI);
     const ribL = Math.round(t * PHI * PHI);
     const notch = Math.round(t / PHI);
-    // Tabs share the fore-edge from H/φ⁴ below the top to H/φ³ above the bottom (clear of the resting corner). Month n sits
+    // Tabs share the fore-edge from H/φ³ below the top to H/φ⁴ above the bottom, clear of the resting corner (upright, where
+    // it rests at the bottom, the other way round). Month n sits
     // frac(n·φ) of the way down: the golden-ratio sequence, which keeps any handful of bookmarks evenly spread out
-    const top0 = H / PHI ** 4;
+    const top0 = this.restTop ? H / PHI ** 3 : H / PHI ** 4;
     const span = H - H / PHI ** 4 - H / PHI ** 3 - t;
     const placed: { right: boolean; top: number; level: number }[] = [];
     // The sheet starting to turn: the open page it lifts from and the page on its back
@@ -1980,9 +1993,9 @@ export class HighlighterBook extends HTMLElement {
       let g: { left: string; top: string; width: string; height: string; padding: string; radius: string; clip: string; right: boolean };
       const ribbon = k === m || k === m + 1;
       if (ribbon) {
-        // Hangs from the top edge W/φ⁴ in from the outer edge, the count at the golden section of its length
-        // (Upright, both hang by their page's title: the bottom page's from just below the binding, clear of the days)
-        const cx = k === m ? W / PHI ** 4 : this.vertical ? W + SPINE + W / PHI ** 4 : spreadW - W / PHI ** 4;
+        // Hangs from the top edge W/φ⁴ in from the left page's outer edge, or from the right page's binding (clear of the
+        // resting corner), the count at the golden section of its length. (Upright, both hang by their page's title)
+        const cx = k === m ? W / PHI ** 4 : W + SPINE + W / PHI ** 4;
         g = {
           left: `${(cx - t / 2).toFixed(1)}px`,
           top: '-6px',
@@ -2273,7 +2286,7 @@ export class HighlighterBook extends HTMLElement {
     // Turning: the bookmarks that will change stay out of sight until the page lies flat. Falling back: they return when it has settled
     if (go) this.renderTabs(this.m + 2 * f.dir, false, true);
     if (go) this.move('turn', { vP });
-    else this.move(f.dir > 0 && !f.top ? 'rest' : 'back', { vP });
+    else this.move(f.dir > 0 && f.top === this.restTop ? 'rest' : 'back', { vP });
   }
 
   /**
@@ -2321,7 +2334,7 @@ export class HighlighterBook extends HTMLElement {
       } else {
         if (idle) this.backOverCorner(idle);
         else {
-          this.beginFlip(dir, false);
+          this.beginFlip(dir, this.restTop);
           this.renderTabs(this.m + 2 * dir, false, true);
         }
         origin = this.corner(this.flip!);
