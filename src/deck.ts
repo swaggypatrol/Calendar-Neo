@@ -849,11 +849,15 @@ export class HighlighterDeck extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
-  /** Blank space: anywhere other than day cells and buttons; on a card, between cards and beside them all count. */
-  private isBlank(e: Event): boolean {
-    return !e
-      .composedPath()
-      .some((n) => n instanceof HTMLElement && (n.classList.contains('wrap') || n.localName === 'button'));
+  /**
+   * Blank space: anywhere other than the days and buttons; on a card, between cards and beside them all count. The place
+   * pressed decides, not the element there: the browser can put a touch just beside a day onto it.
+   */
+  private isBlank(e: PointerEvent): boolean {
+    const path = e.composedPath();
+    const cal = path.find((n) => n instanceof HTMLElement && n.localName === 'highlighter-calendar') as HighlighterCalendar | undefined;
+    if (cal?.onCoat(e.clientX, e.clientY)) return false;
+    return !path.some((n) => n instanceof HTMLElement && n.localName === 'button');
   }
 
   private onDown(e: PointerEvent): void {

@@ -182,17 +182,20 @@ const slantQ = (mid: number, side: number, C: Pt, H: number): Pt => {
   return { x: C.x - 2 * d * n.x, y: C.y - 2 * d * n.y };
 };
 
-/** Uncoated paper's grain, for the matte panel the days are printed on: faint fibres, darker on light paper, lighter on dark. */
-const grain = (r: number, g: number, b: number, a: number) => {
+/**
+ * The tooth of soft-touch matte paper, the page round the days: a fine, even stipple (darker on light paper, lighter on
+ * dark) that looks as if it would grip the finger turning the page.
+ */
+const tooth = (r: number, g: number, b: number, a: number) => {
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">` +
-    `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/>` +
-    `<feColorMatrix values="0 0 0 0 ${r}  0 0 0 0 ${g}  0 0 0 0 ${b}  0 0 0 ${a} ${(-a * 0.42).toFixed(3)}"/></filter>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120">` +
+    `<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="2" stitchTiles="stitch"/>` +
+    `<feColorMatrix values="0 0 0 0 ${r}  0 0 0 0 ${g}  0 0 0 0 ${b}  0 0 0 ${a} ${(-a * 0.46).toFixed(3)}"/></filter>` +
     `<rect width="100%" height="100%" filter="url(#n)"/></svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 };
-const GRAIN_LIGHT = grain(0.36, 0.29, 0.19, 0.42);
-const GRAIN_DARK = grain(0.85, 0.85, 0.82, 0.22);
+const TOOTH_LIGHT = tooth(0.36, 0.29, 0.19, 0.6);
+const TOOTH_DARK = tooth(0.88, 0.88, 0.85, 0.32);
 /** How far beside the wire its shadow falls on the paper. */
 const WIRE_SHADOW = 3.5;
 /** Room above and below the pages for the coil's ends (and their shadows), and round the book for the bookmarks. */
@@ -237,10 +240,12 @@ const DARK_VARS = /* css */ `
     --hb-hole: rgba(8, 9, 11, 0.78);
     --hb-hole-rim: rgba(0, 0, 0, 0.35);
     --hb-hollow: rgba(0, 0, 0, 0.42);
-    --hb-gloss: rgba(255, 255, 255, 0.055);
-    --hb-sheen-dim: rgba(0, 0, 0, 0.12);
-    --hb-matte: #2c2f35;
-    --hb-grain: ${GRAIN_DARK};
+    --hb-tooth: ${TOOTH_DARK};
+    --hb-coat: #25282d;
+    --hb-shine: rgba(255, 255, 255, 0.09);
+    --hb-sheen-dim: rgba(0, 0, 0, 0.16);
+    --hb-rim-light: rgba(255, 255, 255, 0.16);
+    --hb-rim-dark: rgba(0, 0, 0, 0.4);
     --hb-coil: ${COIL_DARK};`;
 
 const STYLE = /* css */ `
@@ -253,10 +258,12 @@ const STYLE = /* css */ `
   --hb-hole: rgba(58, 44, 26, 0.62);
   --hb-hole-rim: rgba(58, 44, 26, 0.22);
   --hb-hollow: rgba(60, 45, 25, 0.2);
-  --hb-gloss: rgba(255, 255, 255, 0.95);
-  --hb-sheen-dim: rgba(90, 70, 40, 0.06);
-  --hb-matte: #f6f2ea;
-  --hb-grain: ${GRAIN_LIGHT};
+  --hb-tooth: ${TOOTH_LIGHT};
+  --hb-coat: #f1ebe0;
+  --hb-shine: rgba(255, 255, 255, 0.9);
+  --hb-sheen-dim: rgba(90, 70, 40, 0.07);
+  --hb-rim-light: rgba(255, 255, 255, 1);
+  --hb-rim-dark: rgba(110, 85, 50, 0.2);
   --hb-coil: ${COIL_LIGHT};
   --hb-pitch: ${PITCH}px;
   /* To fit a small screen: --hb-width narrows the calendars and --hb-scale shrinks their print (the day cells' height with
@@ -289,16 +296,14 @@ const STYLE = /* css */ `
   grid-template-columns: auto auto;
   column-gap: ${SPINE}px;
 }
-/* Coated paper, glossy: a soft sheen and a brighter streak across it, as it catches the light. The grid of days is printed
-   on a matte panel (see highlighter-calendar below): the only part that takes ink. The glossy margin round it is for
-   holding the page (ink would only smear on it) */
+/* Soft-touch matte paper: no sheen, just a fine tooth that grips the finger, for holding and turning the page. The days
+   alone are varnished glossy (a coat laid over them, see highlighter-calendar below), and only they take the ink */
 .page, .turn {
   position: relative;
   box-sizing: border-box;
   padding: ${MARGIN}px ${MARGIN}px ${MARGIN_BOTTOM}px;
   background:
-    linear-gradient(122deg, transparent 8%, var(--hb-gloss) 27%, transparent 46%, transparent 74%, color-mix(in srgb, var(--hb-gloss) 60%, transparent) 84%, transparent 94%),
-    linear-gradient(122deg, var(--hb-sheen-dim), transparent 22%, transparent 56%, var(--hb-sheen-dim)),
+    var(--hb-tooth),
     radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(120, 90, 40, 0.05)),
     var(--hb-paper);
 }
@@ -374,12 +379,18 @@ const STYLE = /* css */ `
   top: 0;
   visibility: hidden;
 }
+/* The varnish over the days: deeper and smooth, with the light's reflection streaking across it, and a rim of light along
+   its edge where it catches the light (bright towards the light, shaded away from it) */
 highlighter-calendar {
   display: block;
   width: var(--hc-card-width);
   --hc-bg: transparent;
   --hc-line: var(--hb-line);
-  --hc-grid-paper: var(--hb-grain), var(--hb-matte);
+  --hc-coat:
+    linear-gradient(122deg, transparent 11%, var(--hb-shine) 20%, var(--hb-shine) 24%, transparent 33%, transparent 71%, color-mix(in srgb, var(--hb-shine) 50%, transparent) 78%, transparent 84%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--hb-shine) 30%, transparent), transparent 45%, transparent 70%, var(--hb-sheen-dim)),
+    var(--hb-coat);
+  --hc-coat-rim: linear-gradient(135deg, var(--hb-rim-light), color-mix(in srgb, var(--hb-rim-light) 45%, transparent) 50%, var(--hb-rim-dark));
   --hc-num: calc(0.875rem * var(--hb-scale, 1));
 }
 /* The spine: the gap between the pages and the coil over it. The coil runs through the holes of every sheet lying open, so
@@ -2107,13 +2118,15 @@ export class HighlighterBook extends HTMLElement {
   // ---------- Gesture: press on blank space and drag sideways, the sheet follows the finger ----------
 
   /** Blank space: anywhere that isn't a day cell or a button (the page corners count as blank: they can be pulled). */
-  private isBlank(e: Event): boolean {
-    return !e
-      .composedPath()
-      .some(
-        (n) =>
-          n instanceof HTMLElement && (n.classList.contains('wrap') || (n.localName === 'button' && !n.classList.contains('corner'))),
-      );
+  /**
+   * Paper to take hold of: anywhere but the coat over a calendar's days (where the pen goes) and buttons other than the
+   * corners. The place pressed decides, not the element there: the browser can put a touch just beside a day onto it.
+   */
+  private isBlank(e: PointerEvent): boolean {
+    const path = e.composedPath();
+    const cal = path.find((n) => n instanceof HTMLElement && n.localName === 'highlighter-calendar') as HighlighterCalendar | undefined;
+    if (cal?.onCoat(e.clientX, e.clientY)) return false;
+    return !path.some((n) => n instanceof HTMLElement && n.localName === 'button' && !n.classList.contains('corner'));
   }
 
   private onDown(e: PointerEvent): void {
