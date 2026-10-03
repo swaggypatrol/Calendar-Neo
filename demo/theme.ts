@@ -31,7 +31,7 @@ function apply(t: Theme): void {
   const root = document.documentElement;
   root.dataset.theme = t;
   root.style.colorScheme = t;
-  for (const el of document.querySelectorAll('highlighter-picker, highlighter-book, highlighter-deck, highlighter-calendar, retro-calendar')) {
+  for (const el of document.querySelectorAll('highlighter-picker, highlighter-book, highlighter-deck, highlighter-calendar, retro-calendar, retro-picker')) {
     el.setAttribute('theme', t);
   }
   const btn = document.getElementById('theme');

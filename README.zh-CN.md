@@ -16,7 +16,8 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 | `<highlighter-book>` | 一本打开的螺旋装订纸质日历：左右两页各一个月（竖着拿手机时是上下两页），纸张双面印刷，软软地卷起来翻页；在磨砂的日期上涂，捏着四周的哑光纸翻页。 |
 | `<highlighter-picker>` | 预订网站用的日期框：一个窄框，点开后长成纸质日历，并写出你选了哪些日子。 |
 | `<highlighter-deck>` | 早期的多月布局：一叠可以左右划的月份卡片。 |
-| `<retro-calendar>` | 反过来：一次只能选一天。液体玻璃做的复古计算器，每个日期是一颗磨砂玻璃按键，黄色灯丝显示屏显示选中的日期。 |
+| `<retro-calendar>` | 反过来：一次只能选一天。液体玻璃做的复古计算器，每个日期是一颗磨砂玻璃按键。 |
+| `<retro-picker>` | 预订网站用的日期框，里面装着这台计算器：点一下日期框，计算器从框下面滑出来。 |
 
 ## 怎么涂
 
@@ -97,25 +98,27 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 
 方法：`clear()`；书有 `next()` / `prev()` / `show(month)`；日期框有 `open()` / `close()`。
 
-## 复古计算器：`<retro-calendar>`
+## 复古计算器：`<retro-calendar>` 和 `<retro-picker>`
 
-只要一个日期的时候用它。每一天都是复古计算器上的一颗按键，按键像老式收音机的互锁琴键：按下一颗，它就卡在下面；原来按下的那颗会弹起来。再按已经按下的那颗不会有任何变化。选中的日期在黄色七段灯丝显示屏上亮起（`2026.10.14`），下面亮出星期；灯丝亮得快、灭得慢，换数字时是慢慢暗下去，而不是一下熄灭。
+只要一个日期的时候用它。每一天都是复古计算器上的一颗按键，按键像老式收音机的互锁琴键：按下一颗，它就卡在下面；原来按下的那颗会弹起来。同一颗键再按一次，它也弹起来，日期就清掉了。没有显示屏：选中那天所在列顶上的星期字母会亮灯（英文是 S M T W T F S，日文是 日 月 火 水 木 金 土），放在 `<retro-picker>` 里时日期直接写进日期框。
 
-现代复古，配色取自日本订房网站：按下锁住的键和「今日」键用它的向日葵黄，**C** 键用 logo 的橙色，左右箭头是烟灰玻璃。机身是一块透明的液体玻璃，边缘会折射后面的画面（`backdrop-filter` 里的 SVG 位移贴图，参考 [kube.io 这篇文章](https://kube.io/blog/liquid-glass-css-svg/)；只有 Chromium 能折射，其它浏览器只有模糊）；按键是磨砂液体玻璃。所有圆角都是苹果的 G2 连续曲线，尺寸都从两颗键之间的间距按黄金分割算出来：外边距是间距的 φ² 倍，键高是键宽的 φ/2，圆角是键高的 1/φ³，按下的行程是 1/φ⁴，数字大小是键宽的 1/φ²；外层圆角和里层同心。星期用汉字（周日红、周六蓝），月份用系统自带的明朝体，品牌处是一枚朱红色的印章。
+现代复古，配色取自日本订房网站：按下锁住的键和「今日」键用它的向日葵黄，左右箭头是烟灰玻璃。机身是一块透明的液体玻璃，边缘会折射后面的画面（`backdrop-filter` 里的 SVG 位移贴图，参考 [kube.io 这篇文章](https://kube.io/blog/liquid-glass-css-svg/)；只有 Chromium 能折射，其它浏览器只有模糊）；按键是磨砂液体玻璃。所有圆角都是苹果的 G2 连续曲线，尺寸都从两颗键之间的间距按黄金分割算出来：外边距是间距的 φ² 倍，键高是键宽的 φ/2，圆角是键高的 1/φ³，按下的行程是 1/φ⁴，数字大小是键宽的 1/φ²；外层圆角和里层同心。星期字母跟着语言走（周日红、周六蓝），月份用系统自带的明朝体。
 
-- 功能键：**C** 弹起按下的键；左右箭头翻月（触控板双指左右滑也行）；**今日** 回到本月。
-- 键盘：方向键在日期间移动（到月边会进入上 / 下个月），Page Up / Page Down 翻月，空格 / 回车按键。
+- 最上面一排：左右箭头翻月（触控板双指左右滑也行），**今日** 回到本月，中间的年月打开月份键盘：日期键沉进玻璃里，升起十二颗月份键，这时左右箭头翻年；按一个月份，那个月的日期键就回来。
+- 键盘：方向键在日期间移动（到月边会进入上 / 下个月），Page Up / Page Down 翻月（月份键盘上是翻年），空格 / 回车按键，Esc 从月份键盘回到日期。
 - `min` / `max` 之外的日期被锁住，按下只会微微一动；过去的日子印成灰色；今天下面有一颗小灯。
-- 键盘总是六行；当月没有的位置，按键平平地沉在面板里；翻月时键帽上的数字像滚筒一样滚过去。
+- 键盘总是六行；当月没有的位置，按键平平地沉在面板里，是空的；翻月时键帽上的数字像滚筒一样滚过去。
+
+`<retro-picker>` 是给预订页面用的日期框。平时显示选中的日期（没选时是灰色的今天日期）。点一下，计算器像抽屉一样从日期框下面滑出来，按键一排一排升起；选日期时它一直开着，再点日期框、点别处或按 Esc 就收回去。焦点在日期框上时按回车或下方向键也能打开，焦点直接落在按键上。
 
 ```html
-<retro-calendar min="today" locale="ja-JP"></retro-calendar>
+<retro-picker min="today" locale="ja-JP"></retro-picker>
 <script>
-  document.querySelector('retro-calendar').addEventListener('change', (e) => console.log(e.detail.value)); // '2026-10-14' 或 null
+  document.querySelector('retro-picker').addEventListener('change', (e) => console.log(e.detail.value)); // '2026-10-14' 或 null
 </script>
 ```
 
-属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`。大小由 `--rc-width` 决定（默认 `22rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`）、`monthchange`（`detail: { month }`）。方法：`clear()`、`next()`、`prev()`、`show(month)`。
+两个元素共有的属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`；日期框另有 `placeholder`（没选日期时代替今天日期显示的灰字）。计算器的大小由 `--rc-width` 决定（单独用默认 `22rem`，在日期框里是 `24rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`，清掉时是 null）、`monthchange`（`detail: { month }`）。方法：计算器有 `clear()`、`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`；日期框有 `open()`、`close()`、`toggle()`、`clear()`，以及取到里面那台计算器的 `calendar`。
 
 ## 运行演示
 
@@ -137,8 +140,9 @@ npm run build        # 打包到 dist/
 - `src/picker.ts`：预订日期框（窄框、展开动画、日期段滚轮、手机上全屏打开）。
 - `src/deck.ts`：卡片叠放的布局。
 - `src/range.ts`：`min` / `max` 的处理。
-- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`：复古计算器（`<retro-calendar>`）、它的布局 / 七段数码的纯逻辑，以及苹果 G2 连续圆角的路径。
-- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页；`retro.html` + `demo/retro.ts`：复古计算器。
+- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`：复古计算器（`<retro-calendar>`）、它的纯逻辑（日期排布、月份键盘、日期框里日期的写法），以及苹果 G2 连续圆角的路径。
+- `src/retro-picker.ts`：计算器从里面滑出来的日期框（`<retro-picker>`）。
+- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页；`retro.html` + `demo/retro.ts`：放在预订页面日期框里的复古计算器。
 
 ## 许可证
 

@@ -1,8 +1,8 @@
 import '../src/index';
-import type { RetroCalendar } from '../src/index';
+import type { RetroPicker } from '../src/index';
 
 const $ = (id: string) => document.getElementById(id)!;
-const cal = $('cal') as RetroCalendar;
+const cal = $('cal') as RetroPicker;
 
 function pick(groupId: string, attr: string, apply: (v: string) => void) {
   const group = $(groupId);

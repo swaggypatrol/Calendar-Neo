@@ -16,7 +16,8 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 | `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side (one above the other on a phone held upright), pages printed on both sides, turned with a soft page curl; you highlight on the frosted days and turn pages by the matte paper round them. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
-| `<retro-calendar>` | The opposite: exactly one date, picked on the frosted-glass keys of a retro calculator made of liquid glass, shown on a yellow filament display. |
+| `<retro-calendar>` | The opposite: exactly one date, picked on the frosted-glass keys of a retro calculator made of liquid glass. |
+| `<retro-picker>` | A booking-style date field holding the calculator, which slides out from under the field when you press it. |
 
 ## How painting works
 
@@ -97,25 +98,27 @@ Events: `input` (fires as each day is selected or cleared while drawing) and `ch
 
 Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the picker `open()` / `close()`.
 
-## The calculator: `<retro-calendar>`
+## The calculator: `<retro-calendar>` and `<retro-picker>`
 
-For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Pressing the key that is already down does nothing. The chosen date glows on a yellow seven-segment filament display (`2026.10.14`), with its weekday lit beneath; filaments heat fast and cool slowly, so digits glow down rather than blink out.
+For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Press the key that is down a second time and it springs up too, clearing the date. There is no display: the lamp over the chosen day's column lights up instead (S M T W T F S, or 日 月 火 水 木 金 土 in Japanese), and in `<retro-picker>` the date appears in the field.
 
-Modern retro, in the colours of a Japanese booking site: its sunflower yellow for the key that is down and for **Today**, the orange of its logo for **C**, smoked glass for the arrows. The body is a slab of clear liquid glass that bends what is behind it near its edge (an SVG displacement map in `backdrop-filter`, after [kube.io's write-up](https://kube.io/blog/liquid-glass-css-svg/); Chromium only, elsewhere it only blurs), and the keys are frosted liquid glass. Every corner is Apple's continuous (G2) curve, and the sizes come from the golden ratio, all measured off the gap between two keys: the margin is φ² gaps, a key is φ/2 as tall as it is wide, its corner is 1/φ³ of its height, its travel 1/φ⁴ and its number 1/φ² of its width; every outer corner shares its centre with the one inside it. Weekdays are in kanji (Sunday red, Saturday blue), the month is set in a system Mincho, and the maker's mark is a vermilion seal.
+Modern retro, in the colours of a Japanese booking site: its sunflower yellow for the key that is down and for **Today**, smoked glass for the arrows. The body is a slab of clear liquid glass that bends what is behind it near its edge (an SVG displacement map in `backdrop-filter`, after [kube.io's write-up](https://kube.io/blog/liquid-glass-css-svg/); Chromium only, elsewhere it only blurs), and the keys are frosted liquid glass. Every corner is Apple's continuous (G2) curve, and the sizes come from the golden ratio, all measured off the gap between two keys: the margin is φ² gaps, a key is φ/2 as tall as it is wide, its corner is 1/φ³ of its height, its travel 1/φ⁴ and its number 1/φ² of its width; every outer corner shares its centre with the one inside it. The weekday letters follow the locale (Sunday red, Saturday blue) and the month is set in a system Mincho.
 
-- Function keys: **C** releases the key that is down, the arrows turn the month (so does a sideways two-finger swipe on a trackpad), **Today** brings back this month.
-- Keyboard: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space / Enter press a key.
+- The top row: the arrows turn the month (so does a sideways two-finger swipe on a trackpad), **Today** brings back this month, and the month between them opens the month pad. There the days sink into the glass and twelve month keys rise in their place, and the arrows turn the year; press a month and its days come back.
+- Keyboard: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month (the year on the month pad), Space / Enter press a key, Esc goes back from the month pad.
 - Days outside `min` / `max` are locked and give only a hair when pressed; past days are printed grey; a small lamp marks today.
-- The pad always has six rows; keys with no day that month sit flush and dark, and the legends roll like a drum when the month turns.
+- The pad always has six rows; keys with no day that month sit flush and empty, and the legends roll like a drum when the month turns.
+
+`<retro-picker>` is the date field for a booking page. At rest it shows the chosen date (or today's, greyed). Press it and the calculator slides out from under the field like a drawer, its keys rising row by row; it stays out while you pick, and goes back in when you press the field again, click elsewhere or press Esc. Enter or the down arrow on the field opens it with the keys in focus.
 
 ```html
-<retro-calendar min="today" locale="ja-JP"></retro-calendar>
+<retro-picker min="today" locale="ja-JP"></retro-picker>
 <script>
-  document.querySelector('retro-calendar').addEventListener('change', (e) => console.log(e.detail.value)); // '2026-10-14' or null
+  document.querySelector('retro-picker').addEventListener('change', (e) => console.log(e.detail.value)); // '2026-10-14' or null
 </script>
 ```
 
-Attributes: `value` (one `YYYY-MM-DD`), `month`, `min`, `max`, `week-start`, `locale`, `theme`. Its size follows `--rc-width` (default `22rem`; everything inside scales with it). Events: `change` with `detail: { value }`, `monthchange` with `detail: { month }`. Methods: `clear()`, `next()`, `prev()`, `show(month)`.
+Attributes, on both: `value` (one `YYYY-MM-DD`), `month`, `min`, `max`, `week-start`, `locale`, `theme`; the field also takes `placeholder` (shown, greyed, while nothing is chosen, instead of today's date). The calculator's size follows `--rc-width` (`22rem` on its own, `24rem` in the field; everything inside scales with it). Events: `change` with `detail: { value }` (null once cleared), `monthchange` with `detail: { month }`. Methods: on the calculator `clear()`, `next()`, `prev()`, `show(month)`, `setView('days' | 'months')`; on the field `open()`, `close()`, `toggle()`, `clear()`, and `calendar` for the calculator inside.
 
 ## Running the demo
 
@@ -137,8 +140,9 @@ npm run build        # library build into dist/
 - `src/picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
 - `src/deck.ts`: the card-stack layout.
 - `src/range.ts`: `min` / `max` handling.
-- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`: the calculator (`<retro-calendar>`), its pure layout / seven-segment helpers, and Apple's continuous (G2) corner paths.
-- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator.
+- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`: the calculator (`<retro-calendar>`), its pure helpers (day layout, month pad, the date as the field writes it), and Apple's continuous (G2) corner paths.
+- `src/retro-picker.ts`: the date field the calculator slides out of (`<retro-picker>`).
+- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator, in its date field on a booking page.
 
 ## License
 

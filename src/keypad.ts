@@ -1,6 +1,6 @@
 /**
- * Pure helpers for <retro-calendar>: the 6 × 7 key layout of a month and the seven-segment patterns its filament
- * display lights. Kept free of the DOM so they can be unit tested.
+ * Pure helpers for <retro-calendar> and <retro-picker>: the 6 × 7 key layout of a month, the twelve keys of the month
+ * pad, and how the date field prints a date. Kept free of the DOM so they can be unit tested.
  */
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -21,31 +21,36 @@ export function monthSlots(year: number, month0: number, weekStart = 0): (number
   });
 }
 
-/**
- * Seven-segment patterns, segments in the usual order a b c d e f g:
- *
- *    aaa
- *   f   b
- *    ggg
- *   e   c
- *    ddd
- */
-export const DIGITS: Record<string, string> = {
-  '0': 'abcdef',
-  '1': 'bc',
-  '2': 'abdeg',
-  '3': 'abcdg',
-  '4': 'bcfg',
-  '5': 'acdfg',
-  '6': 'acdefg',
-  '7': 'abc',
-  '8': 'abcdefg',
-  '9': 'abcdfg',
-  '-': 'g',
-  ' ': '',
-};
+/** One key of the month pad. Months are counted as year * 12 + month (0-based), as everywhere else here. */
+export interface MonthKey {
+  index: number;
+  /** The month the day keys are showing: its key is the one down. */
+  latched: boolean;
+  /** This month, marked with a lamp. */
+  current: boolean;
+  /** Before this month, printed grey. */
+  past: boolean;
+  /** Wholly outside min / max, so locked. */
+  off: boolean;
+}
 
-/** The eight characters the display shows for a date (YYYYMMDD), or dashes when nothing is chosen. */
-export function displayChars(value: string | null): string[] {
-  return (value ? value.replace(/-/g, '') : '--------').split('');
+/** The twelve keys of the month pad for a year, given the month on the day keys, this month and the allowed range. */
+export function monthKeys(year: number, shown: number, current: number, min = -Infinity, max = Infinity): MonthKey[] {
+  return Array.from({ length: 12 }, (_, m) => {
+    const index = year * 12 + m;
+    return { index, latched: index === shown, current: index === current, past: index < current, off: index < min || index > max };
+  });
+}
+
+/**
+ * A date the way a booking site's date field prints it: "Oct 27" in English, "10月27日" in Chinese and Japanese (their
+ * own month and day characters), with the year added only when it isn't this year.
+ */
+export function fieldDate(key: string, locale?: string, now = new Date()): string {
+  const d = new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)));
+  const lang = (locale ?? (typeof navigator !== 'undefined' ? navigator.language : 'en')).toLowerCase();
+  const month = /^(zh|ja|ko)/.test(lang) ? 'long' : 'short';
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === now.getFullYear() ? { month, day: 'numeric' } : { year: 'numeric', month, day: 'numeric' };
+  return new Intl.DateTimeFormat(locale, opts).format(d);
 }
