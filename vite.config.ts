@@ -4,7 +4,7 @@ export default defineConfig(({ mode }) =>
   mode === 'demo'
     ? {
         base: './',
-        build: { outDir: 'demo-dist', rollupOptions: { input: ['index.html', 'booking.html'] } },
+        build: { outDir: 'demo-dist', rollupOptions: { input: ['index.html', 'booking.html', 'retro.html'] } },
       }
     : {
         build: {

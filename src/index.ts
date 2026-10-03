@@ -2,11 +2,13 @@ import { HighlighterCalendar } from './calendar';
 import { HighlighterBook } from './book';
 import { HighlighterDeck } from './deck';
 import { HighlighterPicker } from './picker';
+import { RetroCalendar } from './retro';
 
 export { HighlighterCalendar, dateKey, type CalendarChangeDetail } from './calendar';
 export { HighlighterBook } from './book';
 export { HighlighterDeck } from './deck';
 export { HighlighterPicker, toRanges } from './picker';
+export { RetroCalendar } from './retro';
 export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowLayout, type DayRect } from './engine';
 
 let baseDefined = false;
@@ -33,4 +35,8 @@ if (typeof customElements !== 'undefined' && !customElements.get('highlighter-bo
 
 if (typeof customElements !== 'undefined' && !customElements.get('highlighter-picker')) {
   customElements.define('highlighter-picker', HighlighterPicker);
+}
+
+if (typeof customElements !== 'undefined' && !customElements.get('retro-calendar')) {
+  customElements.define('retro-calendar', RetroCalendar);
 }

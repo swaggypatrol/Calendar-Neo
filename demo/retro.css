@@ -1,0 +1,8 @@
+.retro-stage { justify-content: center; gap: 40px; }
+.retro-stage retro-calendar { flex: 0 1 auto; --rc-width: 24rem; }
+.retro-stage .panel { flex: 0 1 320px; grid-template-columns: 1fr; }
+.more { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
+.more a { color: inherit; }
+@media (max-width: 480px) {
+  .retro-stage retro-calendar { --rc-width: 100%; }
+}

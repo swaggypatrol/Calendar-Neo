@@ -16,6 +16,7 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 | `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side (one above the other on a phone held upright), pages printed on both sides, turned with a soft page curl; you highlight on the frosted days and turn pages by the matte paper round them. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
+| `<retro-calendar>` | The opposite: exactly one date, picked on the keys of an old desk calculator, shown on an orange filament display. |
 
 ## How painting works
 
@@ -96,12 +97,31 @@ Events: `input` (fires as each day is selected or cleared while drawing) and `ch
 
 Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the picker `open()` / `close()`.
 
+## The calculator: `<retro-calendar>`
+
+For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Pressing the key that is already down does nothing. The chosen date glows on an orange seven-segment filament display (`2026.10.14`), with its weekday lit beneath; filaments heat fast and cool slowly, so digits glow down rather than blink out.
+
+- Function keys: **C** releases the key that is down, the arrows turn the month (so does a sideways two-finger swipe on a trackpad), **Today** brings back this month.
+- Keyboard: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space / Enter press a key.
+- Days outside `min` / `max` are locked and give only a hair when pressed; past days are printed grey; a small lamp marks today.
+- The pad always has six rows; keys with no day that month sit flush and dark, and the legends roll like a drum when the month turns.
+
+```html
+<retro-calendar min="today" locale="ja-JP"></retro-calendar>
+<script>
+  document.querySelector('retro-calendar').addEventListener('change', (e) => console.log(e.detail.value)); // '2026-10-14' or null
+</script>
+```
+
+Attributes: `value` (one `YYYY-MM-DD`), `month`, `min`, `max`, `week-start`, `locale`, `theme`. Its size follows `--rc-width` (default `22rem`; everything inside scales with it). Events: `change` with `detail: { value }`, `monthchange` with `detail: { month }`. Methods: `clear()`, `next()`, `prev()`, `show(month)`.
+
 ## Running the demo
 
 ```bash
 npm install
 npm run dev          # http://localhost:5173 (the sun / moon button switches day and night)
 npm run dev:booking  # future-only demo: http://localhost:5173/booking.html
+                     # the calculator: http://localhost:5173/retro.html
 npm test             # unit tests for the selection logic
 npm run build        # library build into dist/
 ```
@@ -115,7 +135,8 @@ npm run build        # library build into dist/
 - `src/picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
 - `src/deck.ts`: the card-stack layout.
 - `src/range.ts`: `min` / `max` handling.
-- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo.
+- `src/retro.ts` + `src/keypad.ts`: the calculator (`<retro-calendar>`) and its pure layout / seven-segment helpers.
+- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator.
 
 ## License
 

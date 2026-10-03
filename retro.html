@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Retro Calculator Calendar · Calendar Neo</title>
+    <link rel="stylesheet" href="/demo/style.css" />
+    <link rel="stylesheet" href="/demo/retro.css" />
+  </head>
+  <body>
+    <main>
+      <section class="intro">
+        <h1>Retro Calculator Calendar</h1>
+        <p>The opposite of the highlighter: exactly one date, picked by pressing a key on an old desk calculator.</p>
+        <ul>
+          <li><b>Every day is a key.</b> Press one and it latches down; whichever key was down springs back up, like the interlocking station buttons on an old radio. Pressing the key that is already down does nothing.</li>
+          <li><b>The filament display</b> shows the chosen date in warm orange seven-segment filaments, with the weekday lit beneath. Filaments heat fast and cool slowly, so changing digits glow down rather than blink out.</li>
+          <li><b>Function keys</b>: <b>C</b> releases the key that is down, the arrows turn the month (a sideways two-finger swipe on a trackpad does too), and <b>Today</b> brings back this month.</li>
+          <li><b>Keyboard</b>: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space or Enter presses a key.</li>
+          <li>Days outside <code>min</code> / <code>max</code> are locked: the key gives only a hair. A small lamp marks today.</li>
+        </ul>
+      </section>
+
+      <section class="stage retro-stage">
+        <retro-calendar id="cal" locale="en-US"></retro-calendar>
+
+        <div class="panel">
+          <div class="field">
+            <label>Earliest date</label>
+            <div class="seg" id="min">
+              <button data-min="" class="on">No limit</button>
+              <button data-min="today">Today</button>
+              <button data-min="tomorrow">Tomorrow</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Language</label>
+            <div class="seg" id="lang">
+              <button data-lang="en-US" class="on">English</button>
+              <button data-lang="ja-JP">日本語</button>
+              <button data-lang="zh-CN">中文</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Week starts on</label>
+            <div class="seg" id="week">
+              <button data-ws="0" class="on">Sunday</button>
+              <button data-ws="1">Monday</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="out">
+        <h2>Chosen: <span id="chosen">nothing yet</span></h2>
+        <ol id="log" class="log"></ol>
+        <p class="more"><a href="./index.html">Highlighter calendar</a> · <a href="./booking.html">Booking calendar</a></p>
+      </section>
+    </main>
+    <script type="module" src="/demo/theme.ts"></script>
+    <script type="module" src="/demo/retro.ts"></script>
+  </body>
+</html>

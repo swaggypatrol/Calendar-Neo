@@ -16,6 +16,7 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 | `<highlighter-book>` | 一本打开的螺旋装订纸质日历：左右两页各一个月（竖着拿手机时是上下两页），纸张双面印刷，软软地卷起来翻页；在磨砂的日期上涂，捏着四周的哑光纸翻页。 |
 | `<highlighter-picker>` | 预订网站用的日期框：一个窄框，点开后长成纸质日历，并写出你选了哪些日子。 |
 | `<highlighter-deck>` | 早期的多月布局：一叠可以左右划的月份卡片。 |
+| `<retro-calendar>` | 反过来：一次只能选一天。复古台式计算器，每个日期是一颗按键，橙色灯丝显示屏显示选中的日期。 |
 
 ## 怎么涂
 
@@ -96,12 +97,31 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 
 方法：`clear()`；书有 `next()` / `prev()` / `show(month)`；日期框有 `open()` / `close()`。
 
+## 复古计算器：`<retro-calendar>`
+
+只要一个日期的时候用它。每一天都是复古计算器上的一颗按键，按键像老式收音机的互锁琴键：按下一颗，它就卡在下面；原来按下的那颗会弹起来。再按已经按下的那颗不会有任何变化。选中的日期在橙色七段灯丝显示屏上亮起（`2026.10.14`），下面亮出星期；灯丝亮得快、灭得慢，换数字时是慢慢暗下去，而不是一下熄灭。
+
+- 功能键：**C** 弹起按下的键；左右箭头翻月（触控板双指左右滑也行）；**今日** 回到本月。
+- 键盘：方向键在日期间移动（到月边会进入上 / 下个月），Page Up / Page Down 翻月，空格 / 回车按键。
+- `min` / `max` 之外的日期被锁住，按下只会微微一动；过去的日子印成灰色；今天下面有一颗小灯。
+- 键盘总是六行；当月没有的位置，按键平平地沉在面板里；翻月时键帽上的数字像滚筒一样滚过去。
+
+```html
+<retro-calendar min="today" locale="ja-JP"></retro-calendar>
+<script>
+  document.querySelector('retro-calendar').addEventListener('change', (e) => console.log(e.detail.value)); // '2026-10-14' 或 null
+</script>
+```
+
+属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`。大小由 `--rc-width` 决定（默认 `22rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`）、`monthchange`（`detail: { month }`）。方法：`clear()`、`next()`、`prev()`、`show(month)`。
+
 ## 运行演示
 
 ```bash
 npm install
 npm run dev          # 打开 http://localhost:5173（右上角的太阳 / 月亮按钮切换日夜间）
 npm run dev:booking  # 只选未来的演示：http://localhost:5173/booking.html
+                     # 复古计算器：http://localhost:5173/retro.html
 npm test             # 选择逻辑的单元测试
 npm run build        # 打包到 dist/
 ```
@@ -115,7 +135,8 @@ npm run build        # 打包到 dist/
 - `src/picker.ts`：预订日期框（窄框、展开动画、日期段滚轮、手机上全屏打开）。
 - `src/deck.ts`：卡片叠放的布局。
 - `src/range.ts`：`min` / `max` 的处理。
-- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页。
+- `src/retro.ts` + `src/keypad.ts`：复古计算器（`<retro-calendar>`）及其布局 / 七段数码的纯逻辑。
+- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页；`retro.html` + `demo/retro.ts`：复古计算器。
 
 ## 许可证
 
