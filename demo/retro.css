@@ -1,8 +1,43 @@
-.retro-stage { justify-content: center; gap: 40px; }
+/* The calculator is glass, so it sits on a view to look through: dusk over the hills, a five-storey pagoda, maples
+   turning; by night, the same hills under the moon */
+.retro-stage {
+  --sky: linear-gradient(180deg, #8d8297 0%, #b48d92 30%, #dca383 52%, #e9a86e 62%, #6b3a2e 100%);
+  --orb: radial-gradient(circle at 74% 26%, #fff1b8 0 5.5%, rgba(255, 214, 110, 0.55) 6%, rgba(255, 190, 90, 0.18) 13%, transparent 26%);
+  --hills: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 600' preserveAspectRatio='none'%3E%3Cpath d='M0 300 C120 220 220 250 320 200 S520 140 640 210 S860 170 980 230 S1120 200 1200 240 V600 H0Z' fill='%23735869' fill-opacity='.75'/%3E%3Cpath d='M0 380 C160 300 300 360 420 320 S640 260 780 330 S1000 300 1200 350 V600 H0Z' fill='%23503845' fill-opacity='.85'/%3E%3Cpath d='M0 470 C200 420 380 470 560 440 S900 400 1200 450 V600 H0Z' fill='%23341f24'/%3E%3C/svg%3E")
+    bottom / 100% 70% no-repeat;
+  --pagoda: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 220'%3E%3Cg fill='%232a1416'%3E%3Crect x='49' y='0' width='2' height='40'/%3E%3Cpath d='M14 52 Q50 36 86 52 L80 56 H20Z'/%3E%3Crect x='32' y='56' width='36' height='18'/%3E%3Cpath d='M8 84 Q50 66 92 84 L86 88 H14Z'/%3E%3Crect x='30' y='88' width='40' height='20'/%3E%3Cpath d='M4 118 Q50 98 96 118 L90 122 H10Z'/%3E%3Crect x='28' y='122' width='44' height='22'/%3E%3Cpath d='M0 154 Q50 132 100 154 L94 158 H6Z'/%3E%3Crect x='26' y='158' width='48' height='24'/%3E%3Cpath d='M0 192 Q50 170 100 192 L94 196 H6Z'/%3E%3Crect x='24' y='196' width='52' height='24'/%3E%3C/g%3E%3Cg fill='%23c8372d'%3E%3Crect x='20' y='54' width='60' height='2'/%3E%3Crect x='14' y='86' width='72' height='2'/%3E%3Crect x='10' y='120' width='80' height='2'/%3E%3Crect x='6' y='156' width='88' height='2'/%3E%3Crect x='6' y='194' width='88' height='2'/%3E%3C/g%3E%3C/svg%3E")
+    right 6% bottom 4% / auto min(62%, 380px) no-repeat;
+  --maples:
+    radial-gradient(18% 14% at 8% 92%, rgba(196, 58, 30, 0.9), transparent 70%),
+    radial-gradient(14% 12% at 26% 98%, rgba(224, 96, 34, 0.85), transparent 70%),
+    radial-gradient(16% 12% at 46% 94%, rgba(170, 40, 30, 0.85), transparent 70%),
+    radial-gradient(14% 10% at 64% 99%, rgba(232, 130, 40, 0.8), transparent 70%),
+    radial-gradient(18% 14% at 92% 96%, rgba(190, 50, 28, 0.9), transparent 70%);
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+  padding: 56px 24px;
+  border-radius: 28px;
+  background: var(--maples), var(--pagoda), var(--hills), var(--orb), var(--sky);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .retro-stage {
+    --sky: linear-gradient(180deg, #0d1226 0%, #1b2140 40%, #3a3150 62%, #1a1018 100%);
+    --orb: radial-gradient(circle at 74% 24%, #fff6d0 0 4.5%, rgba(255, 220, 130, 0.35) 5%, rgba(255, 210, 120, 0.1) 12%, transparent 24%);
+  }
+}
+:root[data-theme="dark"] .retro-stage {
+  --sky: linear-gradient(180deg, #0d1226 0%, #1b2140 40%, #3a3150 62%, #1a1018 100%);
+  --orb: radial-gradient(circle at 74% 24%, #fff6d0 0 4.5%, rgba(255, 220, 130, 0.35) 5%, rgba(255, 210, 120, 0.1) 12%, transparent 24%);
+}
 .retro-stage retro-calendar { flex: 0 1 auto; --rc-width: 24rem; }
 .retro-stage .panel { flex: 0 1 320px; grid-template-columns: 1fr; }
 .more { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
 .more a { color: inherit; }
+@supports (corner-shape: squircle) {
+  .retro-stage { corner-shape: squircle; border-radius: 40px; }
+}
 @media (max-width: 480px) {
+  .retro-stage { padding: 28px 12px; }
   .retro-stage retro-calendar { --rc-width: 100%; }
 }
