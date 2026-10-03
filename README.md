@@ -99,9 +99,9 @@ Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the pick
 
 ## The calculator: `<retro-calendar>`
 
-For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Pressing the key that is already down does nothing. The chosen date glows on a yellow seven-segment filament display (`2026.10.14`), with its weekday lit beneath in kanji; filaments heat fast and cool slowly, so digits glow down rather than blink out.
+For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Pressing the key that is already down does nothing. The chosen date glows on a yellow seven-segment filament display (`2026.10.14`), with its weekday lit beneath; filaments heat fast and cool slowly, so digits glow down rather than blink out.
 
-Modern retro, in the colours of a Japanese booking site (yellow `#facc15`, ink `#020817`): the body is a slab of clear liquid glass that bends what is behind it near its edge (an SVG displacement map in `backdrop-filter`, after [kube.io's write-up](https://kube.io/blog/liquid-glass-css-svg/); Chromium only, elsewhere plain glass), and the keys are frosted liquid glass; the latched key fills with the yellow. Every corner is Apple's continuous (G2) curve, and the sizes come from the golden ratio: gaps are a key's width over φ³, margins over φ, the number on a key over φ². The month is printed as 10月 in Mincho, weekdays in kanji, Sundays and today's mark in vermilion.
+Modern retro, in the colours of a Japanese booking site: its sunflower yellow for the key that is down and for **Today**, the orange of its logo for **C**, smoked glass for the arrows. The body is a slab of clear liquid glass that bends what is behind it near its edge (an SVG displacement map in `backdrop-filter`, after [kube.io's write-up](https://kube.io/blog/liquid-glass-css-svg/); Chromium only, elsewhere it only blurs), and the keys are frosted liquid glass. Every corner is Apple's continuous (G2) curve, and the sizes come from the golden ratio, all measured off the gap between two keys: the margin is φ² gaps, a key is φ/2 as tall as it is wide, its corner is 1/φ³ of its height, its travel 1/φ⁴ and its number 1/φ² of its width; every outer corner shares its centre with the one inside it. Weekdays are in kanji (Sunday red, Saturday blue), the month is set in a system Mincho, and the maker's mark is a vermilion seal.
 
 - Function keys: **C** releases the key that is down, the arrows turn the month (so does a sideways two-finger swipe on a trackpad), **Today** brings back this month.
 - Keyboard: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space / Enter press a key.
@@ -137,7 +137,7 @@ npm run build        # library build into dist/
 - `src/picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
 - `src/deck.ts`: the card-stack layout.
 - `src/range.ts`: `min` / `max` handling.
-- `src/retro.ts` + `src/keypad.ts`: the calculator (`<retro-calendar>`) and its pure layout / seven-segment helpers.
+- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`: the calculator (`<retro-calendar>`), its pure layout / seven-segment helpers, and Apple's continuous (G2) corner paths.
 - `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator.
 
 ## License

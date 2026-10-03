@@ -1,6 +1,6 @@
 import { DayRange, monthIndexOf } from './range';
 import { DIGITS, SLOTS, displayChars, keyOf, monthSlots } from './keypad';
-import { CAN_BEND, continuousRect, refractionMap } from './glass';
+import { roundedRect } from './g2';
 
 /* ---------- Filament display geometry (SVG user units) ---------- */
 
@@ -59,463 +59,560 @@ function displaySvg(): string {
 
 /* ---------- Words on the faceplate, in the reader's language ---------- */
 
-/** Weekdays as printed on a Japanese calendar, Sunday first. */
-const KANJI_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
-
 const WORDS: Record<string, { today: string; prev: string; next: string; clear: string; none: string }> = {
   en: { today: 'Today', prev: 'Previous month', next: 'Next month', clear: 'Clear', none: 'No date chosen' },
   ja: { today: '今日', prev: '前の月', next: '次の月', clear: 'クリア', none: '日付が選ばれていません' },
   zh: { today: '今天', prev: '上个月', next: '下个月', clear: '清除', none: '尚未选择日期' },
 };
 
-/* ---------- Proportions: all from the golden ratio ---------- */
-
-const PHI = (1 + Math.sqrt(5)) / 2;
-/** A key's width, in % of the calculator's width: seven keys, six gaps of key/φ³ and two margins of key/φ fill it. */
-const K = 100 / (7 + 6 / PHI ** 3 + 2 / PHI);
-const cq = (n: number) => `${n.toFixed(3)}cqi`;
-/** Key, gap between keys (key/φ³), margin (key/φ), spacing between parts (key/φ²), key travel. */
-const U = { k: K, g: K / PHI ** 3, p: K / PHI, s: K / PHI ** 2 };
-/** Corners: a key's radius is the gap; the body's sits concentric round it (radius + margin), the display's too. */
-const R_KEY = U.g;
-const R_BODY = R_KEY + U.p;
-
 const STYLE = /* css */ `
 :host {
-  --rc-width: 23rem;
+  --rc-width: 22rem;
   display: inline-block;
   width: var(--rc-width);
   max-width: 100%;
+  /* Everything is measured off the calculator's own width */
+  container-type: inline-size;
   -webkit-tap-highlight-color: transparent;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif;
 
-  /* The palette of the booking site it sits in: its yellow, its near-black ink, its cool greys */
-  --brand: #facc15;
-  --brand-deep: #f0b429;
-  --ink: #020817;
-  --muted: #64748b;
-  --past: #94a3b8;
-  /* Shu, the vermilion of seals and torii, for Sundays and today */
-  --shu: #e0402a;
-  --sat: #2563eb;
-  --glass: rgba(255, 255, 255, 0.16);
-  --glass-hi: rgba(255, 255, 255, 0.34);
-  --key: rgba(255, 255, 255, 0.5);
-  --key-hi: rgba(255, 255, 255, 0.92);
-  --key-rim: rgba(255, 255, 255, 0.55);
-  --shade: rgba(2, 8, 23, 0.2);
-  --print: rgba(2, 8, 23, 0.62);
+  /* The house colours of a travel site in Japan: a warm sunflower yellow for what is chosen, the orange of its logo for
+     the one key that undoes, near-black ink, and clear glass for everything else */
+  --sunflower: #ffc915;
+  --sunflower-deep: #f2ae00;
+  --persimmon: #ee7d2b;
+  --ink: #1d1f23;
+
+  --legend: #24262b;
+  --print: rgba(36, 38, 43, 0.6);
+  --sun: #d23a2a;
+  --sat: #2a5fae;
+  --muted: rgba(36, 38, 43, 0.38);
+  /* Glass: the body, the keys, and the slab edge a key shows when it stands up */
+  --body-tint: linear-gradient(160deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.16) 55%, rgba(255, 255, 255, 0.26));
+  --key-tint: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.42));
+  --key-edge: rgba(70, 60, 50, 0.16);
+  --groove: rgba(40, 30, 20, 0.07);
+  --smoke-tint: linear-gradient(180deg, rgba(48, 48, 54, 0.72), rgba(28, 28, 32, 0.6));
+  --drop: rgba(40, 25, 10, 0.28);
 }
 @media (prefers-color-scheme: dark) {
   :host(:not([theme="light"])) {
-    --ink: #f8fafc;
-    --muted: #94a3b8;
-    --past: #64748b;
-    --shu: #ff6a55;
-    --sat: #6ea8ff;
-    --glass: rgba(14, 16, 24, 0.3);
-    --glass-hi: rgba(255, 255, 255, 0.12);
-    --key: rgba(255, 255, 255, 0.11);
-    --key-hi: rgba(255, 255, 255, 0.3);
-    --key-rim: rgba(255, 255, 255, 0.22);
-    --shade: rgba(0, 0, 0, 0.5);
-    --print: rgba(248, 250, 252, 0.62);
+    --legend: #f1efe9;
+    --print: rgba(241, 239, 233, 0.6);
+    --sun: #ff8070;
+    --sat: #86b4ff;
+    --muted: rgba(241, 239, 233, 0.34);
+    --body-tint: linear-gradient(160deg, rgba(60, 60, 70, 0.34), rgba(20, 20, 26, 0.26) 55%, rgba(40, 40, 48, 0.3));
+    --key-tint: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1));
+    --key-edge: rgba(0, 0, 0, 0.4);
+    --groove: rgba(0, 0, 0, 0.22);
+    --smoke-tint: linear-gradient(180deg, rgba(10, 10, 12, 0.6), rgba(0, 0, 0, 0.5));
+    --drop: rgba(0, 0, 0, 0.5);
   }
 }
 :host([theme="dark"]) {
-  --ink: #f8fafc;
-  --muted: #94a3b8;
-  --past: #64748b;
-  --shu: #ff6a55;
-  --sat: #6ea8ff;
-  --glass: rgba(14, 16, 24, 0.3);
-  --glass-hi: rgba(255, 255, 255, 0.12);
-  --key: rgba(255, 255, 255, 0.11);
-  --key-hi: rgba(255, 255, 255, 0.3);
-  --key-rim: rgba(255, 255, 255, 0.22);
-  --shade: rgba(0, 0, 0, 0.5);
-  --print: rgba(248, 250, 252, 0.62);
+  --legend: #f1efe9;
+  --print: rgba(241, 239, 233, 0.6);
+  --sun: #ff8070;
+  --sat: #86b4ff;
+  --muted: rgba(241, 239, 233, 0.34);
+  --body-tint: linear-gradient(160deg, rgba(60, 60, 70, 0.34), rgba(20, 20, 26, 0.26) 55%, rgba(40, 40, 48, 0.3));
+  --key-tint: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1));
+  --key-edge: rgba(0, 0, 0, 0.4);
+  --groove: rgba(0, 0, 0, 0.22);
+  --smoke-tint: linear-gradient(180deg, rgba(10, 10, 12, 0.6), rgba(0, 0, 0, 0.5));
+  --drop: rgba(0, 0, 0, 0.5);
 }
 
-.frame {
-  container-type: inline-size;
+/*
+ * Golden proportions, all from the gap between two keys (g):
+ *   the margin round the keys is φ²·g, and the slot a key rides in has a lip of g/φ³ (a quarter of g, near enough);
+ *   a key is φ/2 as tall as it is wide; its corner is 1/φ³ of its height, its travel 1/φ⁴, its number 1/φ² of its width;
+ *   every corner further out is the one inside it plus the distance between them, so all of them share a centre.
+ */
+.shell {
+  --g: 2cqi;
+  --pad: calc(var(--g) * 2.618);
+  --lip: calc(var(--g) * 0.236);
+  --kw: calc((100cqi - 2 * var(--pad) - 6 * var(--g)) / 7 - 2 * var(--lip));
+  --kh: calc(var(--kw) * 0.809);
+  --r: calc(var(--kh) * 0.236);
+  --t: calc(var(--kh) * 0.146);
   position: relative;
   user-select: none;
   -webkit-user-select: none;
-  color: var(--ink);
-  --t: 0.9cqi;
+  padding: var(--pad);
+  border-radius: calc(var(--r) + var(--lip) + var(--pad));
+  /* Only the shadow belongs to the shell itself: the glass is a layer of its own under the keys, so that each key's own
+     glass sees (and bends) the body's glass and whatever is behind the calculator */
+  box-shadow:
+    0 0.6cqi 1.4cqi -0.4cqi var(--drop),
+    0 5cqi 9cqi -3cqi var(--drop);
 }
-/* The shadow the slab casts, drawn only outside it (the glass would otherwise show it through) */
-.shade { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-
-/* ---------- The body: a slab of clear liquid glass ---------- */
-.shell {
-  position: relative;
-  padding: ${cq(U.p)};
-  /* The rounded box clips the backdrop (which the path alone may not); the path then trims it to the continuous curve */
-  border-radius: ${cq(R_BODY)};
-  clip-path: var(--body-clip, inset(0 round ${cq(R_BODY)}));
-  background:
-    linear-gradient(155deg, var(--glass-hi), transparent 42%, transparent 70%, var(--glass-hi)),
-    var(--glass);
-  -webkit-backdrop-filter: blur(3px) saturate(1.7) brightness(1.04);
-  backdrop-filter: blur(3px) saturate(1.7) brightness(1.04);
+.glass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  clip-path: var(--g2-body, none);
+  background: var(--body-tint);
+  -webkit-backdrop-filter: blur(14px) saturate(1.7);
+  backdrop-filter: blur(14px) saturate(1.7);
+  box-shadow: inset 0 0 2.4cqi rgba(255, 255, 255, 0.16);
 }
-.shell.bend { backdrop-filter: url(#lg) saturate(1.7) brightness(1.04); }
-.rim { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
-.defs { position: absolute; width: 0; height: 0; }
+.glass.bend { backdrop-filter: blur(14px) saturate(1.7) url(#lens-body); }
+/* Light along the rim of a piece of glass: bright where it faces the light, top left, and again faintly across the way */
+.glass::after, .face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rim) no-repeat 0 0 / 100% 100%;
+}
+.glass::after { --rim: var(--rim-body, none); }
+.shell > :not(.glass) { position: relative; }
 
-/* ---------- Maker's mark: a seal and the name, a solar strip ---------- */
+/* ---------- Top: a seal and the maker's mark, a strip of solar cells, then the display ---------- */
 .mark {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 ${cq(U.s)};
+  margin: 0 0 calc(var(--g) * 1.618);
   color: var(--print);
   font-size: 2.5cqi;
-  font-weight: 650;
-  letter-spacing: 0.3em;
+  font-weight: 700;
+  letter-spacing: 0.28em;
 }
-.mark > span { display: flex; align-items: center; gap: ${cq(U.g)}; }
+.mark > span:first-child { display: flex; align-items: center; gap: calc(var(--g) * 0.618); }
+.mark small { font-weight: 500; letter-spacing: 0.12em; opacity: 0.8; }
+/* A vermilion seal, the way a craftsman signs his work */
 .seal {
   display: grid;
   place-items: center;
-  width: 4.6cqi;
-  height: 4.6cqi;
-  border-radius: 1cqi;
-  background: var(--shu);
-  color: #fff8f0;
-  font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Source Han Serif JP", "MS PMincho", serif;
-  font-size: 3.2cqi;
+  width: 5.2cqi;
+  height: 5.2cqi;
+  border-radius: 1.2cqi;
+  background: #c8372d;
+  color: #fff4ea;
+  font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", serif;
+  font-size: 3.3cqi;
   font-weight: 700;
   letter-spacing: 0;
-  transform: rotate(-4deg);
-  box-shadow: inset 0 0 0 0.35cqi rgba(255, 255, 255, 0.25);
+  box-shadow: inset 0 0 0 0.35cqi rgba(255, 244, 234, 0.85), inset 0 0 0 0.6cqi #c8372d;
 }
 .solar {
   display: flex;
   gap: 0.4cqi;
   padding: 0.5cqi;
   border-radius: 1.2cqi;
-  background: rgba(20, 16, 10, 0.75);
-  box-shadow: inset 0 0.25cqi 0.5cqi rgba(0, 0, 0, 0.6), 0 0 0 0.15cqi rgba(255, 255, 255, 0.3);
+  background: rgba(30, 22, 16, 0.78);
+  box-shadow: inset 0 0.3cqi 0.6cqi rgba(0, 0, 0, 0.6), 0 0.15cqi 0 rgba(255, 255, 255, 0.4);
 }
 .solar i {
-  width: 3.8cqi;
-  height: 2.8cqi;
-  border-radius: 0.35cqi;
-  background: linear-gradient(160deg, #5a4630, #2a2116 55%, #1c160e);
+  width: 4.2cqi;
+  height: 3cqi;
+  border-radius: 0.4cqi;
+  background: linear-gradient(160deg, #6a4f3a, #3d2c22 55%, #2a1e17);
 }
 
-/* ---------- The display: smoked glass over filament tubes ---------- */
 .window {
   position: relative;
-  padding: 3.6cqi 4cqi 2.4cqi;
-  border-radius: ${cq(R_KEY)};
-  clip-path: var(--win-clip, inset(0 round ${cq(R_KEY)}));
-  background: radial-gradient(90% 130% at 50% 30%, rgba(26, 22, 10, 0.9), rgba(6, 6, 8, 0.94));
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  overflow: hidden;
+  padding: 4cqi 4.5cqi 2.6cqi;
+  border-radius: calc(var(--r) * 1.618);
+  clip-path: var(--g2-win, none);
+  background: radial-gradient(90% 120% at 50% 40%, #241d0c 0%, #130f06 60%, #0a0803 100%);
   box-shadow: inset 0 0.8cqi 2cqi rgba(0, 0, 0, 0.85);
+}
+/* The window's bevel, dark where it falls away from the light and catching it along the bottom; and the reflection on
+   its glass */
+.window::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rim-win, none) no-repeat 0 0 / 100% 100%;
 }
 .window::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(168deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 36%, transparent 36.5%);
+  background:
+    linear-gradient(168deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 38%, transparent 38.5%),
+    radial-gradient(60% 40% at 80% 110%, rgba(255, 255, 255, 0.05), transparent);
 }
 .digits { display: block; width: 100%; height: auto; overflow: visible; }
 .seg path { fill: none; stroke-linecap: round; }
-.cold { stroke: #3f3410; stroke-width: 1.1; opacity: 0.8; }
+.cold { stroke: #3d3418; stroke-width: 1.1; opacity: 0.8; }
 .glow {
-  stroke: #f5b800;
+  stroke: #ffbe0d;
   stroke-width: 5.5;
   opacity: 0;
   /* A filament cools slower than it heats: the bloom lingers a moment after the core goes dark */
   transition: opacity 0.55s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 .core {
-  stroke: #fff6c8;
+  stroke: #fff4c6;
   stroke-width: 1.9;
   opacity: 0;
   transition: opacity 0.3s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
-.seg.on .glow { opacity: 0.9; transition: opacity 0.16s ease-in; }
+.seg.on .glow { opacity: 0.85; transition: opacity 0.16s ease-in; }
 .seg.on .core { opacity: 1; transition: opacity 0.1s ease-in; }
-.seg.dim .glow { opacity: 0.35; transition: opacity 0.2s ease-in; }
-.seg.dim .core { opacity: 0.45; transition: opacity 0.14s ease-in; }
+.seg.dim .glow { opacity: 0.32; transition: opacity 0.2s ease-in; }
+.seg.dim .core { opacity: 0.42; transition: opacity 0.14s ease-in; }
 
 .days {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  margin-top: 2cqi;
+  margin-top: 2.2cqi;
   text-align: center;
-  font-size: 2.6cqi;
-  font-weight: 600;
+  font-size: 2.3cqi;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .days span {
-  color: rgba(250, 204, 21, 0.13);
+  color: rgba(255, 200, 30, 0.13);
   transition: color 0.5s cubic-bezier(0.2, 0.6, 0.3, 1), text-shadow 0.5s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 .days span.on {
-  color: #fff1b0;
-  text-shadow: 0 0 0.6cqi #facc15, 0 0 1.8cqi rgba(245, 184, 0, 0.75);
+  color: #ffe58a;
+  text-shadow: 0 0 0.6cqi #ffbe0d, 0 0 1.8cqi rgba(255, 190, 13, 0.7);
   transition-duration: 0.14s;
 }
 
-/* ---------- Function row, with the month between ---------- */
-.fn, .week, .pad {
+/* ---------- The function row, with the month between, set in Mincho ---------- */
+.fn {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: ${cq(U.g)};
+  gap: var(--g);
+  align-items: center;
+  margin: calc(var(--g) * 2.618) 0 calc(var(--g) * 0.618);
 }
-.fn { align-items: center; margin: ${cq(U.p)} 0 ${cq(U.g)}; }
 .month {
   grid-column: span 3;
   position: relative;
   overflow: hidden;
-  height: ${cq(U.k * 0.809)};
+  height: 6cqi;
+  text-align: center;
+  color: var(--legend);
 }
-.month > span {
+.month span {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 1.6cqi;
-  padding-top: 1.2cqi;
+  display: grid;
+  place-items: center;
   white-space: nowrap;
-}
-.month b {
-  font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Source Han Serif JP", "MS PMincho", serif;
-  font-size: ${cq(U.k / PHI)};
+  font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", "Songti SC", serif;
+  font-size: 3.9cqi;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
 }
-.month small { color: var(--muted); font-size: 2.5cqi; font-weight: 600; letter-spacing: 0.14em; }
-.week { margin: ${cq(U.s)} 0 ${cq(U.g)}; text-align: center; line-height: 1.15; }
-.week span { display: grid; gap: 0.7cqi; color: var(--print); font-size: 3cqi; font-weight: 600; }
-.week small { font-size: 1.8cqi; font-weight: 600; letter-spacing: 0.1em; opacity: 0.7; text-transform: uppercase; }
-.week .sun { color: var(--shu); }
+/* The days of the week in kanji, the way a Japanese calendar prints them: Sunday red, Saturday blue */
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--g);
+  margin: calc(var(--g) * 1.618) 0 calc(var(--g) * 0.618);
+  text-align: center;
+  color: var(--print);
+  font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", serif;
+  font-size: 2.9cqi;
+  font-weight: 600;
+}
+.week .sun { color: var(--sun); }
 .week .sat { color: var(--sat); }
 
-/* ---------- Keys: frosted liquid glass ---------- */
-.slot { position: relative; }
-/* The soft shadow each key casts on the glass behind it; it tightens as the key goes down */
-.slot::before {
-  content: "";
-  position: absolute;
-  inset: 14% 8% -6%;
-  border-radius: 30%;
-  background: var(--shade);
-  filter: blur(1.1cqi);
-  transform: translateY(0.9cqi);
-  transition: transform 0.46s cubic-bezier(0.25, 1.75, 0.45, 1), opacity 0.46s ease;
-  pointer-events: none;
+/* ---------- Keys ---------- */
+.pad {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--g);
 }
-.slot:has(.key.latched)::before { transform: translateY(0.35cqi); opacity: 0.75; transition-duration: 0.2s; }
-.slot:has(.key.down)::before { transform: translateY(0.1cqi); opacity: 0.5; transition-duration: 0.075s; }
-.slot:has(.key.blank)::before { opacity: 0; transition-duration: 0.32s; }
+.slot {
+  /* The groove in the glass the key rides in */
+  padding: var(--lip) var(--lip) calc(var(--t) + var(--lip));
+  border-radius: calc(var(--r) + var(--lip));
+  background: var(--groove);
+  box-shadow: inset 0 0.3cqi 0.7cqi rgba(0, 0, 0, 0.14), 0 0.15cqi 0 rgba(255, 255, 255, 0.3);
+}
 .key {
+  --tint: var(--key-tint);
+  --edge: var(--key-edge);
   appearance: none;
   position: relative;
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 1 / ${(PHI / 2).toFixed(3)};
+  aspect-ratio: 1 / 0.809;
   margin: 0;
   padding: 0;
   border: 0;
+  border-radius: var(--r);
+  background: none;
   font: inherit;
-  color: var(--ink);
+  color: var(--legend);
   cursor: pointer;
   touch-action: manipulation;
   outline: none;
-  border-radius: ${cq(R_KEY)};
-  clip-path: var(--key-clip, inset(0 round ${cq(R_KEY)}));
-  background: radial-gradient(120% 95% at 28% 0%, var(--key-hi), transparent 58%), var(--key);
-  -webkit-backdrop-filter: blur(9px) saturate(1.8);
-  backdrop-filter: blur(9px) saturate(1.8);
-  box-shadow:
-    inset 0 0.35cqi 0.25cqi -0.05cqi var(--key-hi),
-    inset 0 -0.5cqi 0.9cqi rgba(2, 8, 23, 0.07),
-    inset 0 0 0 0.18cqi var(--key-rim);
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
   /* Coming back up is a spring: the interlock lets go and the key bounces a hair past its rest before settling */
-  transition:
-    transform 0.46s cubic-bezier(0.25, 1.75, 0.45, 1),
-    box-shadow 0.46s ease,
-    opacity 0.4s ease,
-    color 0.3s ease;
+  transition: transform 0.46s cubic-bezier(0.25, 1.75, 0.45, 1);
 }
-.bend .key { backdrop-filter: url(#kg); }
-/* Latched: down in the glass, filled with the brand's yellow from below */
-.key::after {
+/* The key is a slab of glass: what shows below it is its edge, and under that its shadow */
+.key::before {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(120% 90% at 30% 0%, rgba(255, 255, 255, 0.55), transparent 55%),
-    radial-gradient(90% 80% at 50% 110%, var(--brand-deep), transparent 70%),
-    var(--brand);
-  opacity: 0;
-  transition: opacity 0.35s ease;
+  border-radius: inherit;
+  box-shadow:
+    0 var(--t) 0 var(--edge),
+    0 calc(var(--t) + 0.4cqi) 1.1cqi rgba(0, 0, 0, 0.18);
+  transition: box-shadow 0.46s cubic-bezier(0.25, 1.75, 0.45, 1);
 }
-.key > * { position: relative; z-index: 1; }
+/* Its face: frosted glass, blurring what is under it and, near its rim, bending it */
+.face {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  clip-path: var(--g2-key, none);
+  background: var(--tint);
+  -webkit-backdrop-filter: blur(6px) saturate(1.15);
+  backdrop-filter: blur(6px) saturate(1.15);
+  box-shadow: inset 0 -0.5cqi 1cqi rgba(255, 255, 255, 0.14), inset 0 0.5cqi 1cqi rgba(255, 255, 255, 0.18);
+  transition: background 0.3s ease, opacity 0.32s ease;
+}
+.face::after { --rim: var(--rim-key, none); transition: opacity 0.3s ease; }
+.bend .face { backdrop-filter: blur(6px) saturate(1.15) url(#lens-key); }
 .key.latched {
-  transform: translateY(calc(var(--t) * 0.7)) scale(0.975);
-  color: #1c1503;
-  box-shadow:
-    inset 0 0.5cqi 0.9cqi rgba(120, 80, 0, 0.35),
-    inset 0 -0.3cqi 0.6cqi rgba(255, 255, 255, 0.35),
-    inset 0 0 0 0.18cqi rgba(255, 255, 255, 0.4);
-  transition:
-    transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
-    box-shadow 0.2s ease,
-    opacity 0.4s ease,
-    color 0.2s ease;
+  --tint: linear-gradient(180deg, rgba(255, 214, 60, 0.92), rgba(255, 196, 10, 0.8));
+  --edge: rgba(190, 130, 0, 0.45);
+  color: var(--ink);
+  transform: translateY(calc(var(--t) * 0.8));
+  transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
-.key.latched::after { opacity: 0.92; transition-duration: 0.12s; }
-.key.down {
-  transform: translateY(var(--t)) scale(0.955);
+.key.latched::before {
   box-shadow:
-    inset 0 0.6cqi 1cqi rgba(2, 8, 23, 0.18),
-    inset 0 -0.2cqi 0.4cqi rgba(255, 255, 255, 0.2),
-    inset 0 0 0 0.18cqi var(--key-rim);
-  transition:
-    transform 0.075s cubic-bezier(0.5, 0, 0.9, 0.5),
-    box-shadow 0.075s ease,
-    opacity 0.4s ease,
-    color 0.2s ease;
+    0 calc(var(--t) * 0.2) 0 var(--edge),
+    0 calc(var(--t) * 0.2 + 0.2cqi) 0.9cqi rgba(255, 170, 0, 0.35);
+  transition: box-shadow 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
-/* A blank key: no day under it this month, so it sinks back into the glass */
+.key.down { transform: translateY(var(--t)); transition: transform 0.075s cubic-bezier(0.5, 0, 0.9, 0.5); }
+.key.down::before {
+  box-shadow:
+    0 0 0 var(--edge),
+    0 0.15cqi 0.35cqi rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.075s cubic-bezier(0.5, 0, 0.9, 0.5);
+}
+.key.down .face::after, .key.latched .face::after { opacity: 0.55; }
+/* A blank key: no day under it this month, so it sits flush in its groove, barely there */
 .key.blank {
-  transform: translateY(var(--t)) scale(0.9);
-  opacity: 0.3;
+  transform: translateY(var(--t));
   cursor: default;
   pointer-events: none;
-  transition: transform 0.32s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.32s ease;
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.6, 1);
 }
+.key.blank::before {
+  box-shadow:
+    0 0 0 var(--edge),
+    0 0 0 rgba(0, 0, 0, 0);
+  transition: box-shadow 0.32s cubic-bezier(0.4, 0, 0.6, 1);
+}
+.key.blank .face { opacity: 0.28; }
 /* Out of range: the key is locked; it gives only a hair when pressed */
 .key.off { cursor: not-allowed; }
-.key.off .legend { opacity: 0.3; }
+.key.off .legend { opacity: 0.32; }
 .key.jam { animation: jam 0.24s cubic-bezier(0.3, 0.7, 0.4, 1); }
 @keyframes jam {
-  35% { transform: translateY(calc(var(--t) * 0.25)); }
+  35% { transform: translateY(calc(var(--t) * 0.22)); }
 }
 @media (hover: hover) {
-  .key:not(.blank):not(.off):not(.down):not(.latched):hover { --key: var(--key-hover, rgba(255, 255, 255, 0.62)); }
+  .key:not(.blank):not(.off):not(.down):not(.latched):hover .face::after { opacity: 1.0; }
+  .key:not(.blank):not(.off):not(.down):not(.latched):hover { --tint: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.4)); }
+  .key.fnk:not(.down):hover { --tint: linear-gradient(180deg, rgba(62, 62, 70, 0.74), rgba(36, 36, 42, 0.62)); }
 }
-.shell:not(.pointer) .key:focus-visible {
-  box-shadow:
-    inset 0 0.35cqi 0.25cqi -0.05cqi var(--key-hi),
-    inset 0 0 0 0.55cqi var(--brand-deep);
+.shell:not(.pointer) .key:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--lip) * -2.618);
+  border-radius: calc(var(--r) + var(--lip) * 2.618);
+  border: 0.45cqi solid var(--sunflower-deep);
+  pointer-events: none;
 }
 
 .legend {
-  font-size: ${cq(U.k / PHI ** 2)};
-  font-weight: 600;
+  position: relative;
+  font-size: calc(var(--kw) * 0.382);
+  font-weight: 620;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1;
   pointer-events: none;
+  transition: color 0.3s ease;
 }
 .key.blank .legend, .key.blank .lamp { opacity: 0; }
-.key.sun { color: var(--shu); }
+.key.sun { color: var(--sun); }
 .key.sat { color: var(--sat); }
-.key.past { color: var(--past); }
-.key.latched.sun, .key.latched.sat, .key.latched.past { color: #1c1503; }
-/* Today: a vermilion dot under the number, like a seal's mark */
+.key.past { color: var(--muted); }
+.key.latched.sun, .key.latched.sat, .key.latched.past { color: var(--ink); }
+/* Today: a pinhead lamp under the number, lit the same yellow as the filaments */
 .key .lamp {
   position: absolute;
-  bottom: 12%;
+  bottom: 13%;
   left: 50%;
-  width: 0.95cqi;
-  height: 0.95cqi;
-  margin-left: -0.475cqi;
+  width: 1cqi;
+  height: 1cqi;
+  margin-left: -0.5cqi;
   border-radius: 50%;
-  background: var(--shu);
+  background: #8a6a12;
   opacity: 0;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.4s ease, background-color 0.4s ease, box-shadow 0.4s ease;
 }
-.key.today .lamp { opacity: 1; }
-.key.latched .lamp { background: #1c1503; }
+.key.today .lamp {
+  opacity: 1;
+  background: #ffd43a;
+  box-shadow: 0 0 0.5cqi #ffbe0d, 0 0 1.4cqi rgba(255, 190, 13, 0.7);
+}
+.key.today.latched .lamp { background: #fff6d6; box-shadow: 0 0 0.5cqi #fff; }
 
-.key.fnk .legend { font-size: 3cqi; font-weight: 650; letter-spacing: 0.02em; }
-.key.today-key .legend { font-size: 2.5cqi; }
-.key.today-key .legend:lang(ja), .key.today-key .legend:lang(zh) { font-size: 3cqi; }
-.key.clear { color: var(--shu); }
-.key svg { width: 3.4cqi; height: 3.4cqi; pointer-events: none; }
+/* Function keys, momentary (they always spring back): smoked glass for the arrows, the sunflower yellow for Today and
+   the persimmon of the logo for C */
+.key.fnk { --tint: var(--smoke-tint); --edge: rgba(0, 0, 0, 0.3); color: #f6f3ec; }
+.key.go { --tint: linear-gradient(180deg, rgba(255, 214, 60, 0.95), rgba(255, 196, 10, 0.86)); --edge: rgba(190, 130, 0, 0.5); color: var(--ink); }
+.key.hot { --tint: linear-gradient(180deg, rgba(246, 146, 70, 0.95), rgba(232, 110, 34, 0.86)); --edge: rgba(160, 70, 10, 0.5); color: #fffaf2; }
+.key.fnk .legend, .key.hot .legend, .key.go .legend { font-size: 3cqi; font-weight: 700; letter-spacing: 0.04em; }
+.key.go .legend.long { font-size: 2.4cqi; letter-spacing: 0; }
+.key svg { position: relative; width: 3.4cqi; height: 3.4cqi; pointer-events: none; }
 .key[disabled] { cursor: not-allowed; }
-.key[disabled] .legend, .key[disabled] svg { opacity: 0.3; }
+.key[disabled] .legend, .key[disabled] svg { opacity: 0.35; }
 
+.lenses { position: absolute; width: 0; height: 0; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+/* Until the exact continuous corners are drawn (and where they are not), the browser's own, where it has them */
+@supports (corner-shape: squircle) {
+  .shell, .glass, .window, .slot, .key, .face, .solar, .seal { corner-shape: squircle; }
+  .shell { border-radius: calc((var(--r) + var(--lip) + var(--pad)) * 1.3); }
+  .slot { border-radius: calc((var(--r) + var(--lip)) * 1.3); }
+  .key { border-radius: calc(var(--r) * 1.3); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .key, .key.latched, .key.down, .key.blank { transition-duration: 0.12s; transition-timing-function: ease; }
+  .key, .key.latched, .key.down, .key.blank, .key::before { transition-duration: 0.12s; transition-timing-function: ease; }
 }
 `;
 
 const CHEVRON = (dir: 'l' | 'r') =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${dir === 'l' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="${dir === 'l' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
 
-/** The filters the glass bends light with; their maps are drawn once the sizes are known. */
-const DEFS = `
-<svg class="defs" aria-hidden="true">
-  <filter id="lg" filterUnits="userSpaceOnUse" x="0" y="0" width="0" height="0" color-interpolation-filters="sRGB">
-    <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" edgeMode="duplicate" result="soft"/>
-    <feImage result="map" preserveAspectRatio="none" x="0" y="0" width="0" height="0"/>
-    <feDisplacementMap in="soft" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/>
-  </filter>
-  <filter id="kg" filterUnits="userSpaceOnUse" x="0" y="0" width="0" height="0" color-interpolation-filters="sRGB">
-    <feGaussianBlur in="SourceGraphic" stdDeviation="7" edgeMode="duplicate" result="frost"/>
-    <feImage result="map" preserveAspectRatio="none" x="0" y="0" width="0" height="0"/>
-    <feDisplacementMap in="frost" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G" result="bent"/>
-    <feColorMatrix in="bent" type="saturate" values="1.8"/>
-  </filter>
-</svg>`;
+/** The days of the week as a Japanese calendar prints them, Sunday first. */
+const KANJI = ['日', '月', '火', '水', '木', '金', '土'];
+
+/* ---------- Liquid glass ---------- */
+
+/** Bending what is seen through glass needs an SVG filter in backdrop-filter, which only Chromium draws; elsewhere it only blurs. */
+const CAN_BEND = typeof navigator !== 'undefined' && 'userAgentData' in navigator;
+
+/** One filter that bends the view through a piece of glass, its map drawn once the glass has been measured. */
+const lensFilter = (id: string) =>
+  `<filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="0" height="0" color-interpolation-filters="sRGB"><feImage result="map" preserveAspectRatio="none" x="0" y="0" width="0" height="0"/><feDisplacementMap in="SourceGraphic" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/></filter>`;
+
+/**
+ * The map for bending the view through a slab of glass whose edge is rounded off over `bezel` px, like a drop of water:
+ * flat in the middle, so nothing moves there, and curving down ever more steeply towards its rim, where light coming
+ * through is bent inwards, so the view near the edge is drawn from further in and the world behind seems to swell
+ * towards the edge. The slope is that of the shape blurred over the bezel, so it follows the continuous corners exactly.
+ */
+function lensMap(w: number, h: number, edge: string, bezel: number): string | null {
+  const W = Math.ceil(w);
+  const H = Math.ceil(h);
+  if (!W || !H) return null;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.filter = `blur(${bezel / 2}px)`;
+  ctx.fillStyle = '#fff';
+  ctx.fill(new Path2D(edge));
+  const src = ctx.getImageData(0, 0, W, H).data;
+  const at = (x: number, y: number) => src[(Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))) * 4 + 3] / 255;
+  const out = ctx.createImageData(W, H);
+  const d = out.data;
+  // (the steepest the blurred edge gets, for scaling the slopes to the map's range)
+  const steep = 1 / (bezel * 0.8);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const gx = (at(x + 1, y) - at(x - 1, y)) / 2;
+      const gy = (at(x, y + 1) - at(x, y - 1)) / 2;
+      const k = (y * W + x) * 4;
+      // (the slope points inwards, and so does the bend)
+      d[k] = 128 + Math.max(-127, Math.min(127, (gx / steep) * 127));
+      d[k + 1] = 128 + Math.max(-127, Math.min(127, (gy / steep) * 127));
+      d[k + 2] = 128;
+      d[k + 3] = 255;
+    }
+  }
+  ctx.filter = 'none';
+  ctx.putImageData(out, 0, 0);
+  return c.toDataURL();
+}
+
+const svgUrl = (w: number, h: number, body: string) =>
+  `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>`)}")`;
+
+/**
+ * The rim of a piece of glass, along its exact continuous edge: a hairline of light, brightest where the edge faces the
+ * light (top left), fading round the sides, and catching again faintly across the way.
+ */
+const rim = (w: number, h: number, edge: string, strength = 1) =>
+  svgUrl(
+    w,
+    h,
+    `<defs><linearGradient id="l" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${w}" y2="${h}">` +
+      `<stop offset="0" stop-color="#fff" stop-opacity="${0.95 * strength}"/><stop offset=".32" stop-color="#fff" stop-opacity="${0.22 * strength}"/>` +
+      `<stop offset=".68" stop-color="#fff" stop-opacity="${0.06 * strength}"/><stop offset="1" stop-color="#fff" stop-opacity="${0.5 * strength}"/></linearGradient></defs>` +
+      `<path d="${edge}" fill="none" stroke="url(#l)" stroke-width="2.2"/>`,
+  );
+
+/** The bevel round the display window, sunk into the body: dark where it turns from the light, lit along the bottom. */
+const bevel = (w: number, h: number, edge: string) =>
+  svgUrl(
+    w,
+    h,
+    `<defs><linearGradient id="l" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${h}">` +
+      `<stop offset="0" stop-color="#000" stop-opacity=".7"/><stop offset=".6" stop-color="#000" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".28"/></linearGradient></defs>` +
+      `<path d="${edge}" fill="none" stroke="url(#l)" stroke-width="3"/>`,
+  );
+
+/** How far in from its edge the glass is curved (and bends what is seen through it), and how far that bends it at most, as fractions of the key height. */
+const KEY_BEZEL = 0.236;
+const KEY_SHIFT = 0.236;
+/** The same for the body, as fractions of its margin round the keys. */
+const BODY_BEZEL = 1;
+const BODY_SHIFT = 1;
 
 const TEMPLATE = `
 <style>${STYLE}</style>
-<div class="frame">
-  <svg class="shade" aria-hidden="true">
-    <defs>
-      <filter id="sb" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="14"/></filter>
-      <mask id="outside" maskUnits="userSpaceOnUse"><rect class="mrect" fill="#fff"/><path class="body" fill="#000"/></mask>
-    </defs>
-    <g mask="url(#outside)"><path class="body cast" fill="rgba(2, 8, 23, 0.32)" filter="url(#sb)"/></g>
-  </svg>
-  <div class="shell" part="shell">
-    ${DEFS}
-    <svg class="rim" aria-hidden="true">
-      <defs>
-        <linearGradient id="spec" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#fff" stop-opacity="0.95"/>
-          <stop offset="0.3" stop-color="#fff" stop-opacity="0.25"/>
-          <stop offset="0.7" stop-color="#fff" stop-opacity="0.08"/>
-          <stop offset="1" stop-color="#fff" stop-opacity="0.6"/>
-        </linearGradient>
-      </defs>
-      <path class="body" fill="none" stroke="url(#spec)" stroke-width="3"/>
-      <path class="body" fill="none" stroke="#fff" stroke-opacity="0.12" stroke-width="14"/>
-    </svg>
-    <div class="mark" aria-hidden="true"><span><i class="seal">暦</i>CALENDAR NEO</span><span class="solar"><i></i><i></i><i></i><i></i></span></div>
-    <div class="window" part="display" role="status" aria-live="polite">
-      ${displaySvg()}
-      <div class="days" aria-hidden="true"></div>
-      <span class="sr readout"></span>
-    </div>
-    <div class="fn">
-      <span class="slot"><button class="key fnk clear" type="button"><span class="legend">C</span></button></span>
-      <span class="slot"><button class="key fnk prev" type="button">${CHEVRON('l')}</button></span>
-      <div class="month" aria-live="polite"><span></span></div>
-      <span class="slot"><button class="key fnk next" type="button">${CHEVRON('r')}</button></span>
-      <span class="slot"><button class="key fnk today-key" type="button"><span class="legend"></span></button></span>
-    </div>
-    <div class="week" aria-hidden="true"></div>
-    <div class="pad" role="radiogroup"></div>
+<svg class="lenses" aria-hidden="true">${lensFilter('lens-body')}${lensFilter('lens-key')}</svg>
+<div class="shell" part="shell">
+  <div class="glass"></div>
+  <div class="mark" aria-hidden="true"><span><span class="seal">暦</span>CALENDAR NEO <small>RC-8</small></span><span class="solar"><i></i><i></i><i></i><i></i></span></div>
+  <div class="window" part="display" role="status" aria-live="polite">
+    ${displaySvg()}
+    <div class="days" aria-hidden="true"></div>
+    <span class="sr readout"></span>
   </div>
+  <div class="fn">
+    <span class="slot"><button class="key hot clear" type="button"><span class="face"></span><span class="legend">C</span></button></span>
+    <span class="slot"><button class="key fnk prev" type="button"><span class="face"></span>${CHEVRON('l')}</button></span>
+    <div class="month" aria-live="polite"><span></span></div>
+    <span class="slot"><button class="key fnk next" type="button"><span class="face"></span>${CHEVRON('r')}</button></span>
+    <span class="slot"><button class="key go today-key" type="button"><span class="face"></span><span class="legend"></span></button></span>
+  </div>
+  <div class="week" aria-hidden="true"></div>
+  <div class="pad" role="radiogroup"></div>
 </div>
 `;
 
@@ -531,7 +628,8 @@ const SWIPE = 60;
 /**
  * <retro-calendar>: a single-date picker built like an old desk calculator. Every day is a key, and the keys interlock
  * like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up.
- * The body is a slab of liquid glass, the keys frosted glass, and the chosen date glows on a yellow filament display.
+ * The chosen date glows on a sunflower-yellow filament display. The body is liquid glass and the keys frosted glass, every
+ * corner continuous (G2) and every proportion golden.
  *
  * Attributes: value="2026-10-14"  month="2026-10"  min="today"  max="+90"  week-start="0|1"  locale="ja-JP"  theme="light|dark"
  * Events: change (detail: { value }), monthchange (detail: { month })
@@ -566,9 +664,9 @@ export class RetroCalendar extends HTMLElement {
   private wheelT = 0;
   private wheelSpent = false;
   private press: { el: HTMLButtonElement; id: number; inside: boolean } | null = null;
-  private ro: ResizeObserver | null = null;
-  private shapeSig = '';
-  private $window: HTMLElement;
+  private sizer?: ResizeObserver;
+  /** The sizes the glass was last shaped for, to leave it be when nothing changed. */
+  private glassSig = '';
 
   constructor() {
     super();
@@ -576,7 +674,6 @@ export class RetroCalendar extends HTMLElement {
     root.innerHTML = TEMPLATE;
     const q = <T extends Element>(s: string) => root.querySelector(s) as T;
     this.$shell = q('.shell');
-    this.$window = q('.window');
     this.$pad = q('.pad');
     this.$month = q('.month');
     this.$week = q('.week');
@@ -601,7 +698,7 @@ export class RetroCalendar extends HTMLElement {
       key.setAttribute('role', 'radio');
       key.tabIndex = -1;
       key.dataset.i = String(i);
-      key.innerHTML = '<span class="legend"></span><span class="lamp"></span>';
+      key.innerHTML = '<span class="face"></span><span class="legend"></span><span class="lamp"></span>';
       slot.append(key);
       this.$pad.append(slot);
       this.keys.push(key);
@@ -626,68 +723,12 @@ export class RetroCalendar extends HTMLElement {
 
   connectedCallback(): void {
     if (!this.rendered) this.render(0);
-    this.ro ??= new ResizeObserver(() => this.shape());
-    this.ro.observe(this.$shell);
+    this.sizer ??= new ResizeObserver(() => this.shapeGlass());
+    this.sizer.observe(this.$shell);
   }
 
   disconnectedCallback(): void {
-    this.ro?.disconnect();
-  }
-
-  /**
-   * Cut the glass to size: the body, the display and every key get Apple's continuous corners, and where the browser
-   * can bend light through a backdrop the body and the keys get their refraction maps. All keys share one size, so one
-   * outline and one map serve them all.
-   */
-  private shape(): void {
-    const W = this.$shell.offsetWidth;
-    const H = this.$shell.offsetHeight;
-    const key = this.$clear;
-    const kw = key.offsetWidth;
-    const kh = key.offsetHeight;
-    const win = this.$window;
-    const sig = [W, H, kw, kh, win.offsetWidth, win.offsetHeight].join();
-    if (!W || !kw || sig === this.shapeSig) return;
-    this.shapeSig = sig;
-    const unit = W / 100;
-    const rKey = R_KEY * unit;
-    const rBody = R_BODY * unit;
-
-    const body = continuousRect(W, H, rBody);
-    this.style.setProperty('--body-clip', `path('${body}')`);
-    this.style.setProperty('--key-clip', `path('${continuousRect(kw, kh, rKey)}')`);
-    this.style.setProperty('--win-clip', `path('${continuousRect(win.offsetWidth, win.offsetHeight, rKey)}')`);
-
-    const root = this.shadowRoot!;
-    for (const svg of root.querySelectorAll<SVGSVGElement>('.shade, .rim')) {
-      svg.setAttribute('width', String(W));
-      svg.setAttribute('height', String(H));
-      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      svg.style.overflow = svg.classList.contains('shade') ? 'visible' : 'hidden';
-    }
-    for (const path of root.querySelectorAll('path.body')) path.setAttribute('d', body);
-    root.querySelector('.cast')!.setAttribute('transform', `translate(0 ${(unit * 3).toFixed(1)})`);
-    const m = root.querySelector('.mrect')!;
-    for (const [a, v] of [['x', -W], ['y', -H], ['width', W * 3], ['height', H * 3]] as const) m.setAttribute(a, String(v));
-    const mask = root.querySelector('#outside')!;
-    for (const [a, v] of [['x', -W], ['y', -H], ['width', W * 3], ['height', H * 3]] as const) mask.setAttribute(a, String(v));
-
-    if (!CAN_BEND) return;
-    this.lens('#lg', W, H, refractionMap(W, H, rBody, U.p * unit * 0.75), U.p * unit * 0.9);
-    this.lens('#kg', kw, kh, refractionMap(kw, kh, rKey, Math.min(kw, kh) * 0.3), Math.min(kw, kh) * 0.28);
-    this.$shell.classList.add('bend');
-  }
-
-  /** Size a refraction filter and give it its map; scale is the most it shifts the view, in px, either way. */
-  private lens(id: string, w: number, h: number, map: string, shift: number): void {
-    const f = this.shadowRoot!.querySelector(id)!;
-    const img = f.querySelector('feImage')!;
-    for (const el of [f, img]) {
-      el.setAttribute('width', String(w));
-      el.setAttribute('height', String(h));
-    }
-    img.setAttribute('href', map);
-    f.querySelector('feDisplacementMap')!.setAttribute('scale', String(shift * 2));
+    this.sizer?.disconnect();
   }
 
   attributeChangedCallback(name: string, _old: string | null, v: string | null): void {
@@ -813,17 +854,9 @@ export class RetroCalendar extends HTMLElement {
 
   // ---------- Drawing ----------
 
-  private language(): string {
-    return (this.locale ?? (typeof navigator !== 'undefined' ? navigator.language : 'en')).toLowerCase();
-  }
-
-  /** Japanese or Chinese readers already read 10月 and 日月火…; nobody else needs the gloss left out. */
-  private cjk(): boolean {
-    return /^(ja|zh)/.test(this.language());
-  }
-
   private words() {
-    return WORDS[this.language().slice(0, 2)] ?? WORDS.en;
+    const lang = (this.locale ?? (typeof navigator !== 'undefined' ? navigator.language : 'en')).toLowerCase();
+    return WORDS[lang.slice(0, 2)] ?? WORDS.en;
   }
 
   /** Lay the month out on the keys. dir is -1 / 1 when turning to an earlier / later month, 0 for no animation. */
@@ -837,10 +870,7 @@ export class RetroCalendar extends HTMLElement {
 
     // Faceplate print: the month, the weekday heads, the function keys
     const title = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'long' }).format(new Date(y, m0, 1));
-    // Printed the Japanese way whatever the language: the month as 10月, in Mincho; the reader's own words small beside it
-    const cjk = this.cjk();
-    const aside = cjk ? `${y}` : new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'short' }).format(new Date(y, m0, 1)).toUpperCase();
-    this.roll(this.$month, `<b>${m0 + 1}月</b><small>${aside}</small>`, dir);
+    this.roll(this.$month, title, dir);
     const wd = new Intl.DateTimeFormat(this.locale, { weekday: 'short' });
     const heads: string[] = [];
     const lamps: string[] = [];
@@ -849,18 +879,18 @@ export class RetroCalendar extends HTMLElement {
       // 2023-01-01 was a Sunday
       const d = new Date(2023, 0, 1 + n);
       const cls = n === 0 ? 'sun' : n === 6 ? 'sat' : '';
-      const sub = cjk ? '' : `<small>${wd.format(d).replace(/\.$/, '')}</small>`;
-      heads.push(`<span class="${cls}">${KANJI_DAYS[n]}${sub}</span>`);
-      lamps.push(`<span data-wd="${n}">${KANJI_DAYS[n]}</span>`);
+      heads.push(`<span class="${cls}">${KANJI[n]}</span>`);
+      lamps.push(`<span data-wd="${n}">${wd.format(d).replace(/\.$/, '')}</span>`);
     }
     this.$week.innerHTML = heads.join('');
     if (this.$days.dataset.sig !== lamps.join()) {
       this.$days.innerHTML = lamps.join('');
       this.$days.dataset.sig = lamps.join();
     }
-    const todayLegend = this.$today.querySelector<HTMLElement>('.legend')!;
+    const todayLegend = this.$today.querySelector('.legend')!;
     todayLegend.textContent = w.today;
-    todayLegend.lang = this.language().slice(0, 2);
+    // A word like "Today" needs a smaller print than 今日 to fit the key
+    todayLegend.classList.toggle('long', w.today.length > 2);
     this.$prev.setAttribute('aria-label', w.prev);
     this.$next.setAttribute('aria-label', w.next);
     this.$clear.setAttribute('aria-label', w.clear);
@@ -886,7 +916,7 @@ export class RetroCalendar extends HTMLElement {
 
     this.slots.forEach((s, i) => {
       const el = this.keys[i];
-      const legend = el.firstElementChild as HTMLElement;
+      const legend = el.querySelector('.legend') as HTMLElement;
       el.dataset.key = s.key ?? '';
       el.setAttribute('aria-label', s.key ? label.format(new Date(y, m0, Number(s.label))) : '');
       el.setAttribute('aria-disabled', String(!s.key || s.cls.includes('off')));
@@ -927,18 +957,70 @@ export class RetroCalendar extends HTMLElement {
     this.sync();
   }
 
+  /**
+   * Cut the body, the keys and the display window to Apple's continuous corners at their real sizes, light their rims
+   * along those edges, and (where the browser can) draw the maps that bend the view through the glass. Every key is the
+   * same size, so one map serves them all.
+   */
+  private shapeGlass(): void {
+    const key = this.keys[0];
+    const slot = key.parentElement!;
+    const win = this.$shell.querySelector<HTMLElement>('.window')!;
+    const body = { w: this.$shell.offsetWidth, h: this.$shell.offsetHeight };
+    const k = { w: key.offsetWidth, h: key.offsetHeight };
+    const wn = { w: win.offsetWidth, h: win.offsetHeight };
+    if (!body.w || !k.w) return;
+    const sig = [body.w, body.h, k.w, k.h, wn.w, wn.h].join();
+    if (sig === this.glassSig) return;
+    this.glassSig = sig;
+
+    // The radii as the stylesheet sets them: the key's 1/φ³ of its height, and each one further out concentric with it
+    const pad = parseFloat(getComputedStyle(this.$shell).paddingTop);
+    const lip = (slot.offsetWidth - k.w) / 2;
+    const rKey = k.h * 0.236;
+    const rBody = rKey + lip + pad;
+    const rWin = rKey * 1.618;
+    const keyEdge = roundedRect(k.w, k.h, rKey);
+    const bodyEdge = roundedRect(body.w, body.h, rBody);
+    const winEdge = roundedRect(wn.w, wn.h, rWin);
+    const s = this.$shell.style;
+    s.setProperty('--g2-key', `path('${keyEdge}')`);
+    s.setProperty('--g2-body', `path('${bodyEdge}')`);
+    s.setProperty('--g2-win', `path('${winEdge}')`);
+    s.setProperty('--rim-key', rim(k.w, k.h, keyEdge));
+    s.setProperty('--rim-body', rim(body.w, body.h, bodyEdge, 0.85));
+    s.setProperty('--rim-win', bevel(wn.w, wn.h, winEdge));
+
+    if (!CAN_BEND) return;
+    const lens = (id: string, w: number, h: number, edge: string, bezel: number, shift: number) => {
+      const map = lensMap(w, h, edge, bezel);
+      if (!map) return false;
+      const f = this.shadowRoot!.getElementById(id)!;
+      const img = f.querySelector('feImage')!;
+      for (const el of [f, img]) {
+        el.setAttribute('width', String(Math.ceil(w)));
+        el.setAttribute('height', String(Math.ceil(h)));
+      }
+      img.setAttribute('href', map);
+      f.querySelector('feDisplacementMap')!.setAttribute('scale', String(shift * 2));
+      return true;
+    };
+    const bentBody = lens('lens-body', body.w, body.h, bodyEdge, pad * BODY_BEZEL, pad * BODY_SHIFT);
+    const bentKeys = lens('lens-key', k.w, k.h, keyEdge, k.h * KEY_BEZEL, k.h * KEY_SHIFT);
+    this.$shell.querySelector('.glass')!.classList.toggle('bend', bentBody);
+    this.$shell.classList.toggle('bend', bentKeys);
+  }
+
   /** Swap a printed label with a short vertical roll in the direction of travel. */
-  private roll(box: HTMLElement, html: string, dir: number): void {
+  private roll(box: HTMLElement, text: string, dir: number): void {
     const cur = box.lastElementChild as HTMLElement;
-    if (cur.dataset.html === html) return;
-    if (!dir || !cur.dataset.html) {
-      cur.innerHTML = html;
-      cur.dataset.html = html;
+    if (cur.textContent === text) return;
+    if (!dir || !cur.textContent) {
+      cur.textContent = text;
       return;
     }
     const next = document.createElement('span');
-    next.innerHTML = html;
-    next.dataset.html = html;
+    next.textContent = text;
     box.append(next);
     const ease = 'cubic-bezier(0.25, 0.8, 0.3, 1)';
     for (const old of [...box.children].slice(0, -1) as HTMLElement[]) {
