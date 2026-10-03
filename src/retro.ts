@@ -1,5 +1,6 @@
 import { DayRange, monthIndexOf } from './range';
 import { DIGITS, SLOTS, displayChars, keyOf, monthSlots } from './keypad';
+import { CAN_BEND, continuousRect, refractionMap } from './glass';
 
 /* ---------- Filament display geometry (SVG user units) ---------- */
 
@@ -58,181 +59,189 @@ function displaySvg(): string {
 
 /* ---------- Words on the faceplate, in the reader's language ---------- */
 
+/** Weekdays as printed on a Japanese calendar, Sunday first. */
+const KANJI_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
 const WORDS: Record<string, { today: string; prev: string; next: string; clear: string; none: string }> = {
   en: { today: 'Today', prev: 'Previous month', next: 'Next month', clear: 'Clear', none: 'No date chosen' },
   ja: { today: '今日', prev: '前の月', next: '次の月', clear: 'クリア', none: '日付が選ばれていません' },
   zh: { today: '今天', prev: '上个月', next: '下个月', clear: '清除', none: '尚未选择日期' },
 };
 
+/* ---------- Proportions: all from the golden ratio ---------- */
+
+const PHI = (1 + Math.sqrt(5)) / 2;
+/** A key's width, in % of the calculator's width: seven keys, six gaps of key/φ³ and two margins of key/φ fill it. */
+const K = 100 / (7 + 6 / PHI ** 3 + 2 / PHI);
+const cq = (n: number) => `${n.toFixed(3)}cqi`;
+/** Key, gap between keys (key/φ³), margin (key/φ), spacing between parts (key/φ²), key travel. */
+const U = { k: K, g: K / PHI ** 3, p: K / PHI, s: K / PHI ** 2 };
+/** Corners: a key's radius is the gap; the body's sits concentric round it (radius + margin), the display's too. */
+const R_KEY = U.g;
+const R_BODY = R_KEY + U.p;
+
 const STYLE = /* css */ `
 :host {
-  --rc-width: 22rem;
+  --rc-width: 23rem;
   display: inline-block;
   width: var(--rc-width);
   max-width: 100%;
   -webkit-tap-highlight-color: transparent;
-  font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif;
 
-  /* Light: a cream-and-taupe desk calculator */
-  --shell-hi: #eee8dc;
-  --shell: #ded5c4;
-  --shell-lo: #c9bfac;
-  --print: #74695a;
-  --well: #b5aa96;
-  --cap-hi: #fffdf8;
-  --cap: #f4eee2;
-  --cap-lo: #e2dacb;
-  --wall: #bdb19c;
-  --legend: #34302b;
-  --sun: #c23a2b;
-  --sat: #2a5fae;
-  --muted: #a39a8b;
-  --fn-hi: #6b665f;
-  --fn: #57524b;
-  --fn-lo: #48443e;
-  --fn-wall: #2f2c28;
-  --fn-legend: #f1ebdf;
-  --hot-hi: #f5874a;
-  --hot: #e4652d;
-  --hot-lo: #cf5520;
-  --hot-wall: #94391a;
-  --drop: rgba(60, 45, 25, 0.32);
-  --amber: #ffb347;
+  /* The palette of the booking site it sits in: its yellow, its near-black ink, its cool greys */
+  --brand: #facc15;
+  --brand-deep: #f0b429;
+  --ink: #020817;
+  --muted: #64748b;
+  --past: #94a3b8;
+  /* Shu, the vermilion of seals and torii, for Sundays and today */
+  --shu: #e0402a;
+  --sat: #2563eb;
+  --glass: rgba(255, 255, 255, 0.16);
+  --glass-hi: rgba(255, 255, 255, 0.34);
+  --key: rgba(255, 255, 255, 0.5);
+  --key-hi: rgba(255, 255, 255, 0.92);
+  --key-rim: rgba(255, 255, 255, 0.55);
+  --shade: rgba(2, 8, 23, 0.2);
+  --print: rgba(2, 8, 23, 0.62);
 }
 @media (prefers-color-scheme: dark) {
   :host(:not([theme="light"])) {
-    --shell-hi: #36373b;
-    --shell: #2a2b2f;
-    --shell-lo: #202124;
-    --print: #8f8a82;
-    --well: #151618;
-    --cap-hi: #55575d;
-    --cap: #46484d;
-    --cap-lo: #3a3c41;
-    --wall: #222327;
-    --legend: #eeebe5;
-    --sun: #ff8070;
-    --sat: #86b4ff;
-    --muted: #7a7873;
-    --fn-hi: #2f3034;
-    --fn: #26272a;
-    --fn-lo: #1f2023;
-    --fn-wall: #0d0d0f;
-    --fn-legend: #e6e1d7;
-    --hot-wall: #6e2a12;
-    --drop: rgba(0, 0, 0, 0.55);
+    --ink: #f8fafc;
+    --muted: #94a3b8;
+    --past: #64748b;
+    --shu: #ff6a55;
+    --sat: #6ea8ff;
+    --glass: rgba(14, 16, 24, 0.3);
+    --glass-hi: rgba(255, 255, 255, 0.12);
+    --key: rgba(255, 255, 255, 0.11);
+    --key-hi: rgba(255, 255, 255, 0.3);
+    --key-rim: rgba(255, 255, 255, 0.22);
+    --shade: rgba(0, 0, 0, 0.5);
+    --print: rgba(248, 250, 252, 0.62);
   }
 }
 :host([theme="dark"]) {
-  --shell-hi: #36373b;
-  --shell: #2a2b2f;
-  --shell-lo: #202124;
-  --print: #8f8a82;
-  --well: #151618;
-  --cap-hi: #55575d;
-  --cap: #46484d;
-  --cap-lo: #3a3c41;
-  --wall: #222327;
-  --legend: #eeebe5;
-  --sun: #ff8070;
-  --sat: #86b4ff;
-  --muted: #7a7873;
-  --fn-hi: #2f3034;
-  --fn: #26272a;
-  --fn-lo: #1f2023;
-  --fn-wall: #0d0d0f;
-  --fn-legend: #e6e1d7;
-  --hot-wall: #6e2a12;
-  --drop: rgba(0, 0, 0, 0.55);
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --past: #64748b;
+  --shu: #ff6a55;
+  --sat: #6ea8ff;
+  --glass: rgba(14, 16, 24, 0.3);
+  --glass-hi: rgba(255, 255, 255, 0.12);
+  --key: rgba(255, 255, 255, 0.11);
+  --key-hi: rgba(255, 255, 255, 0.3);
+  --key-rim: rgba(255, 255, 255, 0.22);
+  --shade: rgba(0, 0, 0, 0.5);
+  --print: rgba(248, 250, 252, 0.62);
 }
 
-.shell {
+.frame {
   container-type: inline-size;
   position: relative;
   user-select: none;
   -webkit-user-select: none;
-  /* The key travel, and everything else, scales with the calculator's width */
-  --t: 1.5cqi;
-  padding: 5cqi 5cqi 4.5cqi;
-  border-radius: 7cqi;
-  background:
-    radial-gradient(140% 70% at 30% 0%, var(--shell-hi), transparent 60%),
-    linear-gradient(180deg, var(--shell), var(--shell-lo));
-  box-shadow:
-    inset 0 0.4cqi 0 rgba(255, 255, 255, 0.35),
-    inset 0 -0.8cqi 1.6cqi rgba(0, 0, 0, 0.12),
-    0 1cqi 2cqi var(--drop),
-    0 4cqi 8cqi -2cqi var(--drop);
+  color: var(--ink);
+  --t: 0.9cqi;
 }
+/* The shadow the slab casts, drawn only outside it (the glass would otherwise show it through) */
+.shade { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 
-/* ---------- Top: maker's mark and a solar strip, then the display ---------- */
+/* ---------- The body: a slab of clear liquid glass ---------- */
+.shell {
+  position: relative;
+  padding: ${cq(U.p)};
+  /* The rounded box clips the backdrop (which the path alone may not); the path then trims it to the continuous curve */
+  border-radius: ${cq(R_BODY)};
+  clip-path: var(--body-clip, inset(0 round ${cq(R_BODY)}));
+  background:
+    linear-gradient(155deg, var(--glass-hi), transparent 42%, transparent 70%, var(--glass-hi)),
+    var(--glass);
+  -webkit-backdrop-filter: blur(3px) saturate(1.7) brightness(1.04);
+  backdrop-filter: blur(3px) saturate(1.7) brightness(1.04);
+}
+.shell.bend { backdrop-filter: url(#lg) saturate(1.7) brightness(1.04); }
+.rim { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
+.defs { position: absolute; width: 0; height: 0; }
+
+/* ---------- Maker's mark: a seal and the name, a solar strip ---------- */
 .mark {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 1cqi 3cqi;
+  margin: 0 0 ${cq(U.s)};
   color: var(--print);
-  font-size: 2.6cqi;
-  font-weight: 700;
-  letter-spacing: 0.28em;
+  font-size: 2.5cqi;
+  font-weight: 650;
+  letter-spacing: 0.3em;
 }
-.mark small { font-weight: 500; letter-spacing: 0.12em; opacity: 0.8; }
+.mark > span { display: flex; align-items: center; gap: ${cq(U.g)}; }
+.seal {
+  display: grid;
+  place-items: center;
+  width: 4.6cqi;
+  height: 4.6cqi;
+  border-radius: 1cqi;
+  background: var(--shu);
+  color: #fff8f0;
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Source Han Serif JP", "MS PMincho", serif;
+  font-size: 3.2cqi;
+  font-weight: 700;
+  letter-spacing: 0;
+  transform: rotate(-4deg);
+  box-shadow: inset 0 0 0 0.35cqi rgba(255, 255, 255, 0.25);
+}
 .solar {
   display: flex;
-  gap: 0.5cqi;
-  padding: 0.6cqi;
+  gap: 0.4cqi;
+  padding: 0.5cqi;
   border-radius: 1.2cqi;
-  background: #3a2b22;
-  box-shadow: inset 0 0.3cqi 0.6cqi rgba(0, 0, 0, 0.6), 0 0.2cqi 0 rgba(255, 255, 255, 0.35);
+  background: rgba(20, 16, 10, 0.75);
+  box-shadow: inset 0 0.25cqi 0.5cqi rgba(0, 0, 0, 0.6), 0 0 0 0.15cqi rgba(255, 255, 255, 0.3);
 }
 .solar i {
-  width: 4.2cqi;
-  height: 3.2cqi;
-  border-radius: 0.4cqi;
-  background: linear-gradient(160deg, #6a4a3a, #3d2a22 55%, #2c1e18);
+  width: 3.8cqi;
+  height: 2.8cqi;
+  border-radius: 0.35cqi;
+  background: linear-gradient(160deg, #5a4630, #2a2116 55%, #1c160e);
 }
 
+/* ---------- The display: smoked glass over filament tubes ---------- */
 .window {
   position: relative;
-  overflow: hidden;
-  padding: 4cqi 4.5cqi 2.6cqi;
-  border-radius: 3cqi;
-  background:
-    radial-gradient(90% 120% at 50% 40%, #2a1408 0%, #160a04 60%, #0c0603 100%);
-  box-shadow:
-    inset 0 0.8cqi 2cqi rgba(0, 0, 0, 0.85),
-    inset 0 -0.3cqi 0.6cqi rgba(255, 140, 60, 0.06),
-    0 0 0 0.9cqi #1d1a17,
-    0 0 0 1.2cqi rgba(255, 255, 255, 0.18),
-    0 0.6cqi 1.4cqi 0.9cqi rgba(0, 0, 0, 0.35);
+  padding: 3.6cqi 4cqi 2.4cqi;
+  border-radius: ${cq(R_KEY)};
+  clip-path: var(--win-clip, inset(0 round ${cq(R_KEY)}));
+  background: radial-gradient(90% 130% at 50% 30%, rgba(26, 22, 10, 0.9), rgba(6, 6, 8, 0.94));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0.8cqi 2cqi rgba(0, 0, 0, 0.85);
 }
-/* The glass: a soft diagonal reflection over the tubes */
 .window::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    linear-gradient(168deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.03) 38%, transparent 38.5%),
-    radial-gradient(60% 40% at 80% 110%, rgba(255, 255, 255, 0.04), transparent);
+  background: linear-gradient(168deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 36%, transparent 36.5%);
 }
 .digits { display: block; width: 100%; height: auto; overflow: visible; }
 .seg path { fill: none; stroke-linecap: round; }
-.cold { stroke: #4b2c18; stroke-width: 1.1; opacity: 0.75; }
+.cold { stroke: #3f3410; stroke-width: 1.1; opacity: 0.8; }
 .glow {
-  stroke: #ff6c12;
+  stroke: #f5b800;
   stroke-width: 5.5;
   opacity: 0;
-  /* A filament cools slower than it heats: the bloom lingers a moment, reddening, after the core goes dark */
+  /* A filament cools slower than it heats: the bloom lingers a moment after the core goes dark */
   transition: opacity 0.55s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 .core {
-  stroke: #ffe0a0;
+  stroke: #fff6c8;
   stroke-width: 1.9;
   opacity: 0;
   transition: opacity 0.3s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
-.seg.on .glow { opacity: 0.85; transition: opacity 0.16s ease-in; }
+.seg.on .glow { opacity: 0.9; transition: opacity 0.16s ease-in; }
 .seg.on .core { opacity: 1; transition: opacity 0.1s ease-in; }
 .seg.dim .glow { opacity: 0.35; transition: opacity 0.2s ease-in; }
 .seg.dim .core { opacity: 0.45; transition: opacity 0.14s ease-in; }
@@ -240,261 +249,273 @@ const STYLE = /* css */ `
 .days {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  margin-top: 2.2cqi;
+  margin-top: 2cqi;
   text-align: center;
-  font-size: 2.3cqi;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 2.6cqi;
+  font-weight: 600;
 }
 .days span {
-  color: rgba(255, 130, 50, 0.13);
+  color: rgba(250, 204, 21, 0.13);
   transition: color 0.5s cubic-bezier(0.2, 0.6, 0.3, 1), text-shadow 0.5s cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 .days span.on {
-  color: #ffd38a;
-  text-shadow: 0 0 0.6cqi #ff8a1c, 0 0 1.8cqi rgba(255, 110, 20, 0.7);
+  color: #fff1b0;
+  text-shadow: 0 0 0.6cqi #facc15, 0 0 1.8cqi rgba(245, 184, 0, 0.75);
   transition-duration: 0.14s;
 }
 
-/* ---------- The function row and the month printed on the plate ---------- */
-.fn {
+/* ---------- Function row, with the month between ---------- */
+.fn, .week, .pad {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2cqi;
-  align-items: center;
-  margin: 5cqi 0 1.4cqi;
+  gap: ${cq(U.g)};
 }
+.fn { align-items: center; margin: ${cq(U.p)} 0 ${cq(U.g)}; }
 .month {
   grid-column: span 3;
   position: relative;
   overflow: hidden;
-  height: 6cqi;
-  text-align: center;
-  color: var(--legend);
+  height: ${cq(U.k * 0.809)};
 }
-.month span {
+.month > span {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1.6cqi;
+  padding-top: 1.2cqi;
   white-space: nowrap;
-  font-size: 3.7cqi;
-  font-weight: 700;
-  letter-spacing: 0.08em;
 }
-.week {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2cqi;
-  margin: 2.6cqi 0 1.2cqi;
-  text-align: center;
-  color: var(--print);
-  font-size: 2.5cqi;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+.month b {
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Source Han Serif JP", "MS PMincho", serif;
+  font-size: ${cq(U.k / PHI)};
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
-.week .sun { color: var(--sun); }
+.month small { color: var(--muted); font-size: 2.5cqi; font-weight: 600; letter-spacing: 0.14em; }
+.week { margin: ${cq(U.s)} 0 ${cq(U.g)}; text-align: center; line-height: 1.15; }
+.week span { display: grid; gap: 0.7cqi; color: var(--print); font-size: 3cqi; font-weight: 600; }
+.week small { font-size: 1.8cqi; font-weight: 600; letter-spacing: 0.1em; opacity: 0.7; text-transform: uppercase; }
+.week .sun { color: var(--shu); }
 .week .sat { color: var(--sat); }
 
-/* ---------- Keys ---------- */
-.pad {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2cqi;
+/* ---------- Keys: frosted liquid glass ---------- */
+.slot { position: relative; }
+/* The soft shadow each key casts on the glass behind it; it tightens as the key goes down */
+.slot::before {
+  content: "";
+  position: absolute;
+  inset: 14% 8% -6%;
+  border-radius: 30%;
+  background: var(--shade);
+  filter: blur(1.1cqi);
+  transform: translateY(0.9cqi);
+  transition: transform 0.46s cubic-bezier(0.25, 1.75, 0.45, 1), opacity 0.46s ease;
+  pointer-events: none;
 }
-.slot {
-  /* The hole in the plate the key rides in */
-  padding: 0.5cqi 0.5cqi calc(var(--t) + 0.5cqi);
-  border-radius: 2.8cqi;
-  background: var(--well);
-  box-shadow: inset 0 0.4cqi 0.8cqi rgba(0, 0, 0, 0.35), 0 0.25cqi 0 rgba(255, 255, 255, 0.28);
-}
-.fn .slot { padding-bottom: calc(var(--t) + 0.5cqi); }
+.slot:has(.key.latched)::before { transform: translateY(0.35cqi); opacity: 0.75; transition-duration: 0.2s; }
+.slot:has(.key.down)::before { transform: translateY(0.1cqi); opacity: 0.5; transition-duration: 0.075s; }
+.slot:has(.key.blank)::before { opacity: 0; transition-duration: 0.32s; }
 .key {
-  --c-hi: var(--cap-hi);
-  --c: var(--cap);
-  --c-lo: var(--cap-lo);
-  --c-wall: var(--wall);
   appearance: none;
   position: relative;
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 1 / 0.86;
+  aspect-ratio: 1 / ${(PHI / 2).toFixed(3)};
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 2.3cqi;
   font: inherit;
-  color: var(--legend);
+  color: var(--ink);
   cursor: pointer;
   touch-action: manipulation;
   outline: none;
-  background:
-    radial-gradient(110% 80% at 50% 12%, var(--c-hi), var(--c) 55%, var(--c-lo));
-  transform: translateY(0);
+  border-radius: ${cq(R_KEY)};
+  clip-path: var(--key-clip, inset(0 round ${cq(R_KEY)}));
+  background: radial-gradient(120% 95% at 28% 0%, var(--key-hi), transparent 58%), var(--key);
+  -webkit-backdrop-filter: blur(9px) saturate(1.8);
+  backdrop-filter: blur(9px) saturate(1.8);
   box-shadow:
-    0 var(--t) 0 var(--c-wall),
-    0 calc(var(--t) + 0.5cqi) 1.1cqi rgba(0, 0, 0, 0.32),
-    inset 0 0.3cqi 0 rgba(255, 255, 255, 0.5),
-    inset 0 -0.5cqi 0.9cqi rgba(0, 0, 0, 0.07);
+    inset 0 0.35cqi 0.25cqi -0.05cqi var(--key-hi),
+    inset 0 -0.5cqi 0.9cqi rgba(2, 8, 23, 0.07),
+    inset 0 0 0 0.18cqi var(--key-rim);
+  transform: translateY(0) scale(1);
   /* Coming back up is a spring: the interlock lets go and the key bounces a hair past its rest before settling */
   transition:
     transform 0.46s cubic-bezier(0.25, 1.75, 0.45, 1),
-    box-shadow 0.46s cubic-bezier(0.25, 1.75, 0.45, 1),
+    box-shadow 0.46s ease,
     opacity 0.4s ease,
-    filter 0.2s ease;
+    color 0.3s ease;
 }
+.bend .key { backdrop-filter: url(#kg); }
+/* Latched: down in the glass, filled with the brand's yellow from below */
+.key::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 30% 0%, rgba(255, 255, 255, 0.55), transparent 55%),
+    radial-gradient(90% 80% at 50% 110%, var(--brand-deep), transparent 70%),
+    var(--brand);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.key > * { position: relative; z-index: 1; }
 .key.latched {
-  transform: translateY(calc(var(--t) * 0.8));
+  transform: translateY(calc(var(--t) * 0.7)) scale(0.975);
+  color: #1c1503;
   box-shadow:
-    0 calc(var(--t) * 0.2) 0 var(--c-wall),
-    0 calc(var(--t) * 0.2 + 0.2cqi) 0.5cqi rgba(0, 0, 0, 0.3),
-    inset 0 0.3cqi 0 rgba(255, 255, 255, 0.2),
-    inset 0 0.9cqi 1.4cqi rgba(0, 0, 0, 0.2);
-  /* Down in its hole the cap catches less light */
-  filter: brightness(0.93);
+    inset 0 0.5cqi 0.9cqi rgba(120, 80, 0, 0.35),
+    inset 0 -0.3cqi 0.6cqi rgba(255, 255, 255, 0.35),
+    inset 0 0 0 0.18cqi rgba(255, 255, 255, 0.4);
   transition:
     transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
-    box-shadow 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.2s ease,
     opacity 0.4s ease,
-    filter 0.2s ease;
+    color 0.2s ease;
 }
+.key.latched::after { opacity: 0.92; transition-duration: 0.12s; }
 .key.down {
-  transform: translateY(var(--t));
+  transform: translateY(var(--t)) scale(0.955);
   box-shadow:
-    0 0 0 var(--c-wall),
-    0 0.15cqi 0.35cqi rgba(0, 0, 0, 0.3),
-    inset 0 0.3cqi 0 rgba(255, 255, 255, 0.15),
-    inset 0 0.8cqi 1.2cqi rgba(0, 0, 0, 0.2);
+    inset 0 0.6cqi 1cqi rgba(2, 8, 23, 0.18),
+    inset 0 -0.2cqi 0.4cqi rgba(255, 255, 255, 0.2),
+    inset 0 0 0 0.18cqi var(--key-rim);
   transition:
     transform 0.075s cubic-bezier(0.5, 0, 0.9, 0.5),
-    box-shadow 0.075s cubic-bezier(0.5, 0, 0.9, 0.5),
+    box-shadow 0.075s ease,
     opacity 0.4s ease,
-    filter 0.2s ease;
+    color 0.2s ease;
 }
-/* A blank key: no day under it this month, so it sits flush and dark in its hole */
+/* A blank key: no day under it this month, so it sinks back into the glass */
 .key.blank {
-  transform: translateY(var(--t));
-  box-shadow:
-    0 0 0 var(--c-wall),
-    0 0 0 rgba(0, 0, 0, 0),
-    inset 0 0.3cqi 0 rgba(255, 255, 255, 0),
-    inset 0 0.5cqi 0.9cqi rgba(0, 0, 0, 0.12);
-  opacity: 0.42;
+  transform: translateY(var(--t)) scale(0.9);
+  opacity: 0.3;
   cursor: default;
   pointer-events: none;
-  transition:
-    transform 0.32s cubic-bezier(0.4, 0, 0.6, 1),
-    box-shadow 0.32s cubic-bezier(0.4, 0, 0.6, 1),
-    opacity 0.32s ease;
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.32s ease;
 }
 /* Out of range: the key is locked; it gives only a hair when pressed */
 .key.off { cursor: not-allowed; }
-.key.off .legend { opacity: 0.32; }
+.key.off .legend { opacity: 0.3; }
 .key.jam { animation: jam 0.24s cubic-bezier(0.3, 0.7, 0.4, 1); }
 @keyframes jam {
-  35% { transform: translateY(calc(var(--t) * 0.22)); }
+  35% { transform: translateY(calc(var(--t) * 0.25)); }
 }
 @media (hover: hover) {
-  .key:not(.blank):not(.off):not(.down):not(.latched):hover { filter: brightness(1.035); }
+  .key:not(.blank):not(.off):not(.down):not(.latched):hover { --key: var(--key-hover, rgba(255, 255, 255, 0.62)); }
 }
-.shell:not(.pointer) .key:focus-visible::before {
-  content: "";
-  position: absolute;
-  inset: -0.9cqi;
-  border-radius: 3cqi;
-  border: 0.45cqi solid var(--amber);
-  pointer-events: none;
+.shell:not(.pointer) .key:focus-visible {
+  box-shadow:
+    inset 0 0.35cqi 0.25cqi -0.05cqi var(--key-hi),
+    inset 0 0 0 0.55cqi var(--brand-deep);
 }
 
 .legend {
-  font-size: 4.4cqi;
-  font-weight: 620;
+  font-size: ${cq(U.k / PHI ** 2)};
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1;
   pointer-events: none;
 }
 .key.blank .legend, .key.blank .lamp { opacity: 0; }
-.key.sun { color: var(--sun); }
+.key.sun { color: var(--shu); }
 .key.sat { color: var(--sat); }
-.key.past { color: var(--muted); }
-/* Today: a pinhead lamp under the number */
+.key.past { color: var(--past); }
+.key.latched.sun, .key.latched.sat, .key.latched.past { color: #1c1503; }
+/* Today: a vermilion dot under the number, like a seal's mark */
 .key .lamp {
   position: absolute;
-  bottom: 13%;
+  bottom: 12%;
   left: 50%;
-  width: 1cqi;
-  height: 1cqi;
-  margin-left: -0.5cqi;
+  width: 0.95cqi;
+  height: 0.95cqi;
+  margin-left: -0.475cqi;
   border-radius: 50%;
-  background: #6b3a1a;
+  background: var(--shu);
   opacity: 0;
-  transition: opacity 0.4s ease, background-color 0.4s ease, box-shadow 0.4s ease;
+  transition: opacity 0.4s ease;
 }
-.key.today .lamp {
-  opacity: 1;
-  background: #ffc067;
-  box-shadow: 0 0 0.5cqi #ff9a2e, 0 0 1.4cqi rgba(255, 120, 20, 0.6);
-}
+.key.today .lamp { opacity: 1; }
+.key.latched .lamp { background: #1c1503; }
 
-/* Function keys: dark caps, momentary (they always spring back) */
-.key.fnk {
-  --c-hi: var(--fn-hi);
-  --c: var(--fn);
-  --c-lo: var(--fn-lo);
-  --c-wall: var(--fn-wall);
-  color: var(--fn-legend);
-}
-.key.hot {
-  --c-hi: var(--hot-hi);
-  --c: var(--hot);
-  --c-lo: var(--hot-lo);
-  --c-wall: var(--hot-wall);
-  color: #fff6ec;
-}
-.key.fnk .legend, .key.hot .legend { font-size: 3cqi; font-weight: 700; letter-spacing: 0.04em; }
+.key.fnk .legend { font-size: 3cqi; font-weight: 650; letter-spacing: 0.02em; }
+.key.today-key .legend { font-size: 2.5cqi; }
+.key.today-key .legend:lang(ja), .key.today-key .legend:lang(zh) { font-size: 3cqi; }
+.key.clear { color: var(--shu); }
 .key svg { width: 3.4cqi; height: 3.4cqi; pointer-events: none; }
 .key[disabled] { cursor: not-allowed; }
-.key[disabled] .legend, .key[disabled] svg { opacity: 0.35; }
+.key[disabled] .legend, .key[disabled] svg { opacity: 0.3; }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-@supports (corner-shape: squircle) {
-  .shell, .window, .slot, .key, .solar { corner-shape: squircle; }
-  .shell { border-radius: 9cqi; }
-  .window { border-radius: 5cqi; }
-  .slot { border-radius: 4.4cqi; }
-  .key { border-radius: 3.6cqi; }
-}
 @media (prefers-reduced-motion: reduce) {
   .key, .key.latched, .key.down, .key.blank { transition-duration: 0.12s; transition-timing-function: ease; }
 }
 `;
 
 const CHEVRON = (dir: 'l' | 'r') =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="${dir === 'l' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${dir === 'l' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+
+/** The filters the glass bends light with; their maps are drawn once the sizes are known. */
+const DEFS = `
+<svg class="defs" aria-hidden="true">
+  <filter id="lg" filterUnits="userSpaceOnUse" x="0" y="0" width="0" height="0" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="0.6" edgeMode="duplicate" result="soft"/>
+    <feImage result="map" preserveAspectRatio="none" x="0" y="0" width="0" height="0"/>
+    <feDisplacementMap in="soft" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="kg" filterUnits="userSpaceOnUse" x="0" y="0" width="0" height="0" color-interpolation-filters="sRGB">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="7" edgeMode="duplicate" result="frost"/>
+    <feImage result="map" preserveAspectRatio="none" x="0" y="0" width="0" height="0"/>
+    <feDisplacementMap in="frost" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G" result="bent"/>
+    <feColorMatrix in="bent" type="saturate" values="1.8"/>
+  </filter>
+</svg>`;
 
 const TEMPLATE = `
 <style>${STYLE}</style>
-<div class="shell" part="shell">
-  <div class="mark" aria-hidden="true"><span>CALENDAR NEO <small>RC-8</small></span><span class="solar"><i></i><i></i><i></i><i></i></span></div>
-  <div class="window" part="display" role="status" aria-live="polite">
-    ${displaySvg()}
-    <div class="days" aria-hidden="true"></div>
-    <span class="sr readout"></span>
+<div class="frame">
+  <svg class="shade" aria-hidden="true">
+    <defs>
+      <filter id="sb" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="14"/></filter>
+      <mask id="outside" maskUnits="userSpaceOnUse"><rect class="mrect" fill="#fff"/><path class="body" fill="#000"/></mask>
+    </defs>
+    <g mask="url(#outside)"><path class="body cast" fill="rgba(2, 8, 23, 0.32)" filter="url(#sb)"/></g>
+  </svg>
+  <div class="shell" part="shell">
+    ${DEFS}
+    <svg class="rim" aria-hidden="true">
+      <defs>
+        <linearGradient id="spec" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fff" stop-opacity="0.95"/>
+          <stop offset="0.3" stop-color="#fff" stop-opacity="0.25"/>
+          <stop offset="0.7" stop-color="#fff" stop-opacity="0.08"/>
+          <stop offset="1" stop-color="#fff" stop-opacity="0.6"/>
+        </linearGradient>
+      </defs>
+      <path class="body" fill="none" stroke="url(#spec)" stroke-width="3"/>
+      <path class="body" fill="none" stroke="#fff" stroke-opacity="0.12" stroke-width="14"/>
+    </svg>
+    <div class="mark" aria-hidden="true"><span><i class="seal">暦</i>CALENDAR NEO</span><span class="solar"><i></i><i></i><i></i><i></i></span></div>
+    <div class="window" part="display" role="status" aria-live="polite">
+      ${displaySvg()}
+      <div class="days" aria-hidden="true"></div>
+      <span class="sr readout"></span>
+    </div>
+    <div class="fn">
+      <span class="slot"><button class="key fnk clear" type="button"><span class="legend">C</span></button></span>
+      <span class="slot"><button class="key fnk prev" type="button">${CHEVRON('l')}</button></span>
+      <div class="month" aria-live="polite"><span></span></div>
+      <span class="slot"><button class="key fnk next" type="button">${CHEVRON('r')}</button></span>
+      <span class="slot"><button class="key fnk today-key" type="button"><span class="legend"></span></button></span>
+    </div>
+    <div class="week" aria-hidden="true"></div>
+    <div class="pad" role="radiogroup"></div>
   </div>
-  <div class="fn">
-    <span class="slot"><button class="key hot clear" type="button"><span class="legend">C</span></button></span>
-    <span class="slot"><button class="key fnk prev" type="button">${CHEVRON('l')}</button></span>
-    <div class="month" aria-live="polite"><span></span></div>
-    <span class="slot"><button class="key fnk next" type="button">${CHEVRON('r')}</button></span>
-    <span class="slot"><button class="key fnk today-key" type="button"><span class="legend"></span></button></span>
-  </div>
-  <div class="week" aria-hidden="true"></div>
-  <div class="pad" role="radiogroup"></div>
 </div>
 `;
 
@@ -510,7 +531,7 @@ const SWIPE = 60;
 /**
  * <retro-calendar>: a single-date picker built like an old desk calculator. Every day is a key, and the keys interlock
  * like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up.
- * The chosen date glows on an orange filament display.
+ * The body is a slab of liquid glass, the keys frosted glass, and the chosen date glows on a yellow filament display.
  *
  * Attributes: value="2026-10-14"  month="2026-10"  min="today"  max="+90"  week-start="0|1"  locale="ja-JP"  theme="light|dark"
  * Events: change (detail: { value }), monthchange (detail: { month })
@@ -545,6 +566,9 @@ export class RetroCalendar extends HTMLElement {
   private wheelT = 0;
   private wheelSpent = false;
   private press: { el: HTMLButtonElement; id: number; inside: boolean } | null = null;
+  private ro: ResizeObserver | null = null;
+  private shapeSig = '';
+  private $window: HTMLElement;
 
   constructor() {
     super();
@@ -552,6 +576,7 @@ export class RetroCalendar extends HTMLElement {
     root.innerHTML = TEMPLATE;
     const q = <T extends Element>(s: string) => root.querySelector(s) as T;
     this.$shell = q('.shell');
+    this.$window = q('.window');
     this.$pad = q('.pad');
     this.$month = q('.month');
     this.$week = q('.week');
@@ -601,6 +626,68 @@ export class RetroCalendar extends HTMLElement {
 
   connectedCallback(): void {
     if (!this.rendered) this.render(0);
+    this.ro ??= new ResizeObserver(() => this.shape());
+    this.ro.observe(this.$shell);
+  }
+
+  disconnectedCallback(): void {
+    this.ro?.disconnect();
+  }
+
+  /**
+   * Cut the glass to size: the body, the display and every key get Apple's continuous corners, and where the browser
+   * can bend light through a backdrop the body and the keys get their refraction maps. All keys share one size, so one
+   * outline and one map serve them all.
+   */
+  private shape(): void {
+    const W = this.$shell.offsetWidth;
+    const H = this.$shell.offsetHeight;
+    const key = this.$clear;
+    const kw = key.offsetWidth;
+    const kh = key.offsetHeight;
+    const win = this.$window;
+    const sig = [W, H, kw, kh, win.offsetWidth, win.offsetHeight].join();
+    if (!W || !kw || sig === this.shapeSig) return;
+    this.shapeSig = sig;
+    const unit = W / 100;
+    const rKey = R_KEY * unit;
+    const rBody = R_BODY * unit;
+
+    const body = continuousRect(W, H, rBody);
+    this.style.setProperty('--body-clip', `path('${body}')`);
+    this.style.setProperty('--key-clip', `path('${continuousRect(kw, kh, rKey)}')`);
+    this.style.setProperty('--win-clip', `path('${continuousRect(win.offsetWidth, win.offsetHeight, rKey)}')`);
+
+    const root = this.shadowRoot!;
+    for (const svg of root.querySelectorAll<SVGSVGElement>('.shade, .rim')) {
+      svg.setAttribute('width', String(W));
+      svg.setAttribute('height', String(H));
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.style.overflow = svg.classList.contains('shade') ? 'visible' : 'hidden';
+    }
+    for (const path of root.querySelectorAll('path.body')) path.setAttribute('d', body);
+    root.querySelector('.cast')!.setAttribute('transform', `translate(0 ${(unit * 3).toFixed(1)})`);
+    const m = root.querySelector('.mrect')!;
+    for (const [a, v] of [['x', -W], ['y', -H], ['width', W * 3], ['height', H * 3]] as const) m.setAttribute(a, String(v));
+    const mask = root.querySelector('#outside')!;
+    for (const [a, v] of [['x', -W], ['y', -H], ['width', W * 3], ['height', H * 3]] as const) mask.setAttribute(a, String(v));
+
+    if (!CAN_BEND) return;
+    this.lens('#lg', W, H, refractionMap(W, H, rBody, U.p * unit * 0.75), U.p * unit * 0.9);
+    this.lens('#kg', kw, kh, refractionMap(kw, kh, rKey, Math.min(kw, kh) * 0.3), Math.min(kw, kh) * 0.28);
+    this.$shell.classList.add('bend');
+  }
+
+  /** Size a refraction filter and give it its map; scale is the most it shifts the view, in px, either way. */
+  private lens(id: string, w: number, h: number, map: string, shift: number): void {
+    const f = this.shadowRoot!.querySelector(id)!;
+    const img = f.querySelector('feImage')!;
+    for (const el of [f, img]) {
+      el.setAttribute('width', String(w));
+      el.setAttribute('height', String(h));
+    }
+    img.setAttribute('href', map);
+    f.querySelector('feDisplacementMap')!.setAttribute('scale', String(shift * 2));
   }
 
   attributeChangedCallback(name: string, _old: string | null, v: string | null): void {
@@ -726,9 +813,17 @@ export class RetroCalendar extends HTMLElement {
 
   // ---------- Drawing ----------
 
+  private language(): string {
+    return (this.locale ?? (typeof navigator !== 'undefined' ? navigator.language : 'en')).toLowerCase();
+  }
+
+  /** Japanese or Chinese readers already read 10月 and 日月火…; nobody else needs the gloss left out. */
+  private cjk(): boolean {
+    return /^(ja|zh)/.test(this.language());
+  }
+
   private words() {
-    const lang = (this.locale ?? (typeof navigator !== 'undefined' ? navigator.language : 'en')).toLowerCase();
-    return WORDS[lang.slice(0, 2)] ?? WORDS.en;
+    return WORDS[this.language().slice(0, 2)] ?? WORDS.en;
   }
 
   /** Lay the month out on the keys. dir is -1 / 1 when turning to an earlier / later month, 0 for no animation. */
@@ -742,9 +837,11 @@ export class RetroCalendar extends HTMLElement {
 
     // Faceplate print: the month, the weekday heads, the function keys
     const title = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'long' }).format(new Date(y, m0, 1));
-    this.roll(this.$month, title, dir);
+    // Printed the Japanese way whatever the language: the month as 10月, in Mincho; the reader's own words small beside it
+    const cjk = this.cjk();
+    const aside = cjk ? `${y}` : new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'short' }).format(new Date(y, m0, 1)).toUpperCase();
+    this.roll(this.$month, `<b>${m0 + 1}月</b><small>${aside}</small>`, dir);
     const wd = new Intl.DateTimeFormat(this.locale, { weekday: 'short' });
-    const short = new Intl.DateTimeFormat(this.locale, { weekday: 'narrow' });
     const heads: string[] = [];
     const lamps: string[] = [];
     for (let i = 0; i < 7; i++) {
@@ -752,15 +849,18 @@ export class RetroCalendar extends HTMLElement {
       // 2023-01-01 was a Sunday
       const d = new Date(2023, 0, 1 + n);
       const cls = n === 0 ? 'sun' : n === 6 ? 'sat' : '';
-      heads.push(`<span class="${cls}">${short.format(d)}</span>`);
-      lamps.push(`<span data-wd="${n}">${wd.format(d).replace(/\.$/, '')}</span>`);
+      const sub = cjk ? '' : `<small>${wd.format(d).replace(/\.$/, '')}</small>`;
+      heads.push(`<span class="${cls}">${KANJI_DAYS[n]}${sub}</span>`);
+      lamps.push(`<span data-wd="${n}">${KANJI_DAYS[n]}</span>`);
     }
     this.$week.innerHTML = heads.join('');
     if (this.$days.dataset.sig !== lamps.join()) {
       this.$days.innerHTML = lamps.join('');
       this.$days.dataset.sig = lamps.join();
     }
-    this.$today.querySelector('.legend')!.textContent = w.today;
+    const todayLegend = this.$today.querySelector<HTMLElement>('.legend')!;
+    todayLegend.textContent = w.today;
+    todayLegend.lang = this.language().slice(0, 2);
     this.$prev.setAttribute('aria-label', w.prev);
     this.$next.setAttribute('aria-label', w.next);
     this.$clear.setAttribute('aria-label', w.clear);
@@ -828,15 +928,17 @@ export class RetroCalendar extends HTMLElement {
   }
 
   /** Swap a printed label with a short vertical roll in the direction of travel. */
-  private roll(box: HTMLElement, text: string, dir: number): void {
+  private roll(box: HTMLElement, html: string, dir: number): void {
     const cur = box.lastElementChild as HTMLElement;
-    if (cur.textContent === text) return;
-    if (!dir || !cur.textContent) {
-      cur.textContent = text;
+    if (cur.dataset.html === html) return;
+    if (!dir || !cur.dataset.html) {
+      cur.innerHTML = html;
+      cur.dataset.html = html;
       return;
     }
     const next = document.createElement('span');
-    next.textContent = text;
+    next.innerHTML = html;
+    next.dataset.html = html;
     box.append(next);
     const ease = 'cubic-bezier(0.25, 0.8, 0.3, 1)';
     for (const old of [...box.children].slice(0, -1) as HTMLElement[]) {

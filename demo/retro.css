@@ -1,8 +1,52 @@
-.retro-stage { justify-content: center; gap: 40px; }
-.retro-stage retro-calendar { flex: 0 1 auto; --rc-width: 24rem; }
-.retro-stage .panel { flex: 0 1 320px; grid-template-columns: 1fr; }
+.retro-stage { justify-content: center; gap: 32px; align-items: stretch; }
+.scene {
+  position: relative;
+  flex: 1 1 520px;
+  display: grid;
+  place-items: center;
+  min-height: 760px;
+  padding: 48px 16px;
+  border-radius: 28px;
+  overflow: hidden;
+  isolation: isolate;
+}
+@supports (corner-shape: squircle) { .scene { corner-shape: squircle; border-radius: 48px; } }
+.scene .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+.scene retro-calendar { --rc-width: 24rem; }
+.retro-stage .panel { flex: 0 1 300px; grid-template-columns: 1fr; align-content: start; }
 .more { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
 .more a { color: inherit; }
+
+/* Dusk over Kyoto: mauve sky, low sun, maples, a pagoda; the glass needs something behind it to bend */
+.scene {
+  --sky0: #8e7a92; --sky1: #d9a08e; --sky2: #f0c79a;
+  --sun0: rgba(255, 236, 190, 0.95); --sun1: rgba(255, 200, 140, 0);
+  --disc: #fff4d6; --m1: #7d6a80; --m2: #5c4b5f; --sea: #4a3b4d; --wave: rgba(255, 255, 255, 0.16);
+  --pagoda: #2b1f2a; --maple: #b4351f; --torii: #d8442c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .scene {
+    --sky0: #0b1026; --sky1: #1f2448; --sky2: #43355a;
+    --sun0: rgba(220, 230, 255, 0.5); --sun1: rgba(180, 190, 255, 0);
+    --disc: #eef2ff; --m1: #2a2d4a; --m2: #1c1d33; --sea: #141428; --wave: rgba(160, 180, 255, 0.12);
+    --pagoda: #07070f; --maple: #6e1d16; --torii: #9e2b1c;
+  }
+}
+:root[data-theme="dark"] .scene {
+  --sky0: #0b1026; --sky1: #1f2448; --sky2: #43355a;
+  --sun0: rgba(220, 230, 255, 0.5); --sun1: rgba(180, 190, 255, 0);
+  --disc: #eef2ff; --m1: #2a2d4a; --m2: #1c1d33; --sea: #141428; --wave: rgba(160, 180, 255, 0.12);
+  --pagoda: #07070f; --maple: #6e1d16; --torii: #9e2b1c;
+}
+.sky0 { stop-color: var(--sky0); } .sky1 { stop-color: var(--sky1); } .sky2 { stop-color: var(--sky2); }
+.sun0 { stop-color: var(--sun0); } .sun1 { stop-color: var(--sun1); }
+.disc { fill: var(--disc); } .m1 { fill: var(--m1); } .m2 { fill: var(--m2); } .sea { fill: var(--sea); }
+.wave { stroke: var(--wave); stroke-width: 2; }
+.pagoda { fill: var(--pagoda); } .maple { fill: var(--maple); opacity: 0.92; } .torii { fill: var(--torii); }
+
+/* The page's own controls in the booking site's yellow */
+.retro-stage .seg button.on { background: #facc15; color: #020817; }
 @media (max-width: 480px) {
-  .retro-stage retro-calendar { --rc-width: 100%; }
+  .scene { padding: 24px 10px; min-height: 0; }
+  .scene retro-calendar { --rc-width: 100%; }
 }

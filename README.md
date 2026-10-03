@@ -16,7 +16,7 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 | `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side (one above the other on a phone held upright), pages printed on both sides, turned with a soft page curl; you highlight on the frosted days and turn pages by the matte paper round them. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
-| `<retro-calendar>` | The opposite: exactly one date, picked on the keys of an old desk calculator, shown on an orange filament display. |
+| `<retro-calendar>` | The opposite: exactly one date, picked on the frosted-glass keys of a retro calculator made of liquid glass, shown on a yellow filament display. |
 
 ## How painting works
 
@@ -99,7 +99,9 @@ Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the pick
 
 ## The calculator: `<retro-calendar>`
 
-For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Pressing the key that is already down does nothing. The chosen date glows on an orange seven-segment filament display (`2026.10.14`), with its weekday lit beneath; filaments heat fast and cool slowly, so digits glow down rather than blink out.
+For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Pressing the key that is already down does nothing. The chosen date glows on a yellow seven-segment filament display (`2026.10.14`), with its weekday lit beneath in kanji; filaments heat fast and cool slowly, so digits glow down rather than blink out.
+
+Modern retro, in the colours of a Japanese booking site (yellow `#facc15`, ink `#020817`): the body is a slab of clear liquid glass that bends what is behind it near its edge (an SVG displacement map in `backdrop-filter`, after [kube.io's write-up](https://kube.io/blog/liquid-glass-css-svg/); Chromium only, elsewhere plain glass), and the keys are frosted liquid glass; the latched key fills with the yellow. Every corner is Apple's continuous (G2) curve, and the sizes come from the golden ratio: gaps are a key's width over φ³, margins over φ, the number on a key over φ². The month is printed as 10月 in Mincho, weekdays in kanji, Sundays and today's mark in vermilion.
 
 - Function keys: **C** releases the key that is down, the arrows turn the month (so does a sideways two-finger swipe on a trackpad), **Today** brings back this month.
 - Keyboard: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space / Enter press a key.

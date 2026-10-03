@@ -11,10 +11,11 @@
     <main>
       <section class="intro">
         <h1>Retro Calculator Calendar</h1>
-        <p>The opposite of the highlighter: exactly one date, picked by pressing a key on an old desk calculator.</p>
+        <p>The opposite of the highlighter: exactly one date, picked on the keys of a retro desk calculator made of liquid glass.</p>
         <ul>
           <li><b>Every day is a key.</b> Press one and it latches down; whichever key was down springs back up, like the interlocking station buttons on an old radio. Pressing the key that is already down does nothing.</li>
-          <li><b>The filament display</b> shows the chosen date in warm orange seven-segment filaments, with the weekday lit beneath. Filaments heat fast and cool slowly, so changing digits glow down rather than blink out.</li>
+          <li><b>The body</b> is a slab of clear liquid glass that bends the scene behind it near its edges (in Chromium; elsewhere it is plain glass), and the keys are frosted glass. Corners are Apple's continuous curves, and the proportions come from the golden ratio.</li>
+          <li><b>The filament display</b> shows the chosen date in warm yellow seven-segment filaments, with the weekday lit beneath. Filaments heat fast and cool slowly, so changing digits glow down rather than blink out.</li>
           <li><b>Function keys</b>: <b>C</b> releases the key that is down, the arrows turn the month (a sideways two-finger swipe on a trackpad does too), and <b>Today</b> brings back this month.</li>
           <li><b>Keyboard</b>: arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space or Enter presses a key.</li>
           <li>Days outside <code>min</code> / <code>max</code> are locked: the key gives only a hair. A small lamp marks today.</li>
@@ -22,7 +23,47 @@
       </section>
 
       <section class="stage retro-stage">
-        <retro-calendar id="cal" locale="en-US"></retro-calendar>
+        <div class="scene">
+          <svg class="backdrop" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <defs>
+              <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" class="sky0" /><stop offset="0.55" class="sky1" /><stop offset="1" class="sky2" />
+              </linearGradient>
+              <radialGradient id="sun"><stop offset="0" class="sun0" /><stop offset="1" class="sun1" /></radialGradient>
+              <pattern id="seigaiha" width="60" height="30" patternUnits="userSpaceOnUse">
+                <g fill="none" class="wave">
+                  <circle cx="30" cy="30" r="28" /><circle cx="30" cy="30" r="20" /><circle cx="30" cy="30" r="12" />
+                  <circle cx="0" cy="15" r="28" /><circle cx="0" cy="15" r="20" /><circle cx="0" cy="15" r="12" />
+                  <circle cx="60" cy="15" r="28" /><circle cx="60" cy="15" r="20" /><circle cx="60" cy="15" r="12" />
+                </g>
+              </pattern>
+            </defs>
+            <rect width="1200" height="760" fill="url(#sky)" />
+            <circle cx="430" cy="300" r="190" fill="url(#sun)" />
+            <circle cx="430" cy="300" r="46" class="disc" />
+            <path class="m1" d="M0 420 L120 360 L230 395 L360 300 L470 370 L560 330 L700 400 L820 310 L930 360 L1060 300 L1200 350 V760 H0Z" />
+            <path class="m2" d="M0 480 L150 420 L300 470 L420 430 L560 490 L690 440 L840 480 L980 420 L1200 470 V760 H0Z" />
+            <rect y="520" width="1200" height="240" class="sea" /><rect y="520" width="1200" height="240" fill="url(#seigaiha)" />
+            <g class="pagoda" transform="translate(980 250)">
+              <rect x="56" y="-40" width="8" height="60" />
+              <path d="M0 40 Q60 10 120 40 L100 46 H20Z M14 46 H106 V64 H14Z" />
+              <path d="M-6 100 Q60 66 126 100 L106 106 H14Z M12 106 H108 V126 H12Z" />
+              <path d="M-12 162 Q60 124 132 162 L110 168 H10Z M10 168 H110 V190 H10Z" />
+              <path d="M-18 228 Q60 186 138 228 L114 234 H6Z M8 234 H112 V520 H8Z" />
+            </g>
+            <g class="maple">
+              <circle cx="40" cy="600" r="90" /><circle cx="170" cy="640" r="80" /><circle cx="300" cy="680" r="90" />
+              <circle cx="1100" cy="620" r="110" /><circle cx="960" cy="690" r="90" /><circle cx="820" cy="720" r="70" />
+            </g>
+            <g class="torii" transform="translate(150 380)">
+              <path d="M-20 0 Q80 -18 180 0 L176 12 Q80 -4 -16 12Z" />
+              <rect x="0" y="22" width="160" height="10" />
+              <rect x="20" y="10" width="12" height="150" /><rect x="128" y="10" width="12" height="150" />
+              <rect x="74" y="12" width="12" height="20" />
+            </g>
+          </svg>
+          <retro-calendar id="cal" locale="en-US"></retro-calendar>
+        </div>
 
         <div class="panel">
           <div class="field">
