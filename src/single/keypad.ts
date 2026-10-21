@@ -72,3 +72,34 @@ export function fieldDate(key: string, locale?: string, now = new Date()): strin
     d.getFullYear() === now.getFullYear() ? { month, day: 'numeric' } : { year: 'numeric', month, day: 'numeric' };
   return new Intl.DateTimeFormat(locale, opts).format(d);
 }
+
+/**
+ * The title over two months, `first` and the month after it, in short month names where the language has them (Oct,
+ * not 10月) so it fits one month's width. The language's own range where it spells the months (Oct – Nov 2026,
+ * 2026年10月至11月 in some browsers); where it only gives numbers (2026/10 – 2026/11, as newer browsers do for Chinese
+ * and Japanese), both months are written the way one month is, joined by `to`, the year they share said once (on the
+ * second month where the year comes first: 2026年10月至11月; on the first where it comes last: Oct – Nov 2026), and
+ * across a new year both keep theirs.
+ */
+export function monthPairTitle(locale: string | undefined, first: Date, to: string): string {
+  const second = new Date(first.getFullYear(), first.getMonth() + 1, 1);
+  const style = /\d/.test(new Intl.DateTimeFormat(locale, { month: 'short' }).format(first)) ? 'long' : 'short';
+  const fmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: style });
+  const range = typeof fmt.formatRange === 'function' ? fmt.formatRange(first, second) : '';
+  if (/\p{L}/u.test(range)) return range;
+  if (first.getFullYear() !== second.getFullYear()) return `${fmt.format(first)}${to}${fmt.format(second)}`;
+  const kinds = fmt.formatToParts(first).map((p) => p.type);
+  const yearFirst = kinds.indexOf('year') < kinds.indexOf('month');
+  // One month without its year: the year and the literal that joins it to the month (年 after it, a space before it)
+  const withoutYear = (d: Date) => {
+    const parts = fmt.formatToParts(d);
+    const y = parts.findIndex((p) => p.type === 'year');
+    const joint = yearFirst ? y + 1 : y - 1;
+    return parts
+      .filter((p, i) => i !== y && !(i === joint && p.type === 'literal'))
+      .map((p) => p.value)
+      .join('')
+      .trim();
+  };
+  return yearFirst ? `${fmt.format(first)}${to}${withoutYear(second)}` : `${withoutYear(first)}${to}${fmt.format(second)}`;
+}

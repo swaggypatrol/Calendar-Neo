@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { SLOTS, fieldDate, firstMonthShowing, keyOf, monthKeys, monthSlots, pairLayout } from '../src/single/keypad';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SLOTS, fieldDate, firstMonthShowing, keyOf, monthKeys, monthPairTitle, monthSlots, pairLayout } from '../src/single/keypad';
 
 describe('monthSlots', () => {
   it('lays October 2026 out from Sunday: the 1st is a Thursday', () => {
@@ -80,5 +80,29 @@ describe('two months', () => {
     // One month: the month itself, as before
     expect(firstMonthShowing(oct + 1, oct, 1)).toBe(oct + 1);
     expect(firstMonthShowing(oct - 3, oct, 1)).toBe(oct - 3);
+  });
+});
+
+describe('the title over two months', () => {
+  const oct = new Date(2026, 9, 1);
+  const dec = new Date(2026, 11, 1);
+  const cases: Array<[string, string, string, string]> = [
+    ['zh-CN', '至', '2026年10月至11月', '2026年12月至2027年1月'],
+    ['ja-JP', ' – ', '2026年10月 – 11月', '2026年12月 – 2027年1月'],
+    ['en-US', ' – ', 'Oct – Nov 2026', 'Dec 2026 – Jan 2027'],
+  ];
+  // (a language's own range may set thin spaces round the dash)
+  const plain = (s: string) => s.replace(/\s/g, ' ');
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(cases)('%s: one year said once, and both years across a new year', (locale, to, same, across) => {
+    expect(plain(monthPairTitle(locale, oct, to))).toBe(same);
+    expect(plain(monthPairTitle(locale, dec, to))).toBe(across);
+  });
+
+  it.each(cases)('%s: the same where the language range gives only numbers, as in newer browsers', (locale, to, same, across) => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'formatRange').mockReturnValue('2026/10 – 2026/11');
+    expect(monthPairTitle(locale, oct, to)).toBe(same);
+    expect(monthPairTitle(locale, dec, to)).toBe(across);
   });
 });

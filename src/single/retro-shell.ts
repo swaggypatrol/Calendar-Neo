@@ -13,6 +13,8 @@ export interface Words {
   months: string;
   days: string;
   none: string;
+  /** Between two months in a title, where the language's own range only gives numbers */
+  to: string;
 }
 
 export const WORDS: Record<string, Words> = {
@@ -25,6 +27,7 @@ export const WORDS: Record<string, Words> = {
     months: 'choose month and year',
     days: 'back to the days',
     none: 'No date chosen',
+    to: ' – ',
   },
   ja: {
     today: '今日',
@@ -35,6 +38,7 @@ export const WORDS: Record<string, Words> = {
     months: '年と月を選ぶ',
     days: '日付に戻る',
     none: '日付が選ばれていません',
+    to: ' – ',
   },
   zh: {
     today: '今天',
@@ -45,6 +49,7 @@ export const WORDS: Record<string, Words> = {
     months: '选择年月',
     days: '回到日期',
     none: '尚未选择日期',
+    to: '至',
   },
 };
 

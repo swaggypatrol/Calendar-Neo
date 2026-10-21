@@ -1,5 +1,5 @@
 import { monthIndexOf } from '../shared/range';
-import { SLOTS, firstMonthShowing, keyOf, monthSlots, pairLayout } from './keypad';
+import { SLOTS, firstMonthShowing, keyOf, monthPairTitle, monthSlots, pairLayout } from './keypad';
 import { MINCHO, RetroShell } from './retro-shell';
 
 /** What only the day keys need on top of the calculator's look: the weekday lamps, the day grid, the day colours and the today lamp. */
@@ -306,17 +306,7 @@ export class RetroCalendar extends RetroShell {
 
   protected titleText(): string {
     if (this._view === 'months' || this.pads < 2) return super.titleText();
-    const a = new Date(Math.floor(this.monthIdx / 12), this.monthIdx % 12, 1);
-    // Short month names where the language has them (Oct, not 10月), so the range fits one month's width; each month's
-    // caption has the full name
-    const month = (style: 'short' | 'long', d: Date) => new Intl.DateTimeFormat(this.locale, { month: style }).format(d);
-    const style = /\d/.test(month('short', a)) ? 'long' : 'short';
-    const fmt = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: style });
-    const b = new Date(Math.floor((this.monthIdx + 1) / 12), (this.monthIdx + 1) % 12, 1);
-    const range = typeof fmt.formatRange === 'function' ? fmt.formatRange(a, b) : '';
-    // Where the language's range comes out as bare numbers (2026/10～2026/11 in Japanese), it is spelt out as one month is
-    if (/\p{L}/u.test(range)) return range;
-    return `${fmt.format(a)} – ${a.getFullYear() === b.getFullYear() ? month(style, b) : fmt.format(b)}`;
+    return monthPairTitle(this.locale, new Date(Math.floor(this.monthIdx / 12), this.monthIdx % 12, 1), this.words().to);
   }
 
   // ---------- Selection ----------
