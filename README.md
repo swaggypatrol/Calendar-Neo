@@ -16,7 +16,8 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 | `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side (one above the other on a phone held upright), pages printed on both sides, turned with a soft page curl; you highlight on the frosted days and turn pages by the matte paper round them. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
-| `<retro-calendar>` | The opposite: exactly one date, picked on the frosted-glass keys of a retro calculator made of liquid glass. |
+| `<retro-calendar>` | The opposite: exactly one date, picked on the frosted-glass keys of a retro calculator made of liquid glass. One month, or two side by side. |
+| `<retro-frame>` | The calculator's body and top row (arrows, month, Today, the month pad) around content of your own. |
 | `<retro-picker>` | A booking-style date field holding the calculator, which slides out from under the field when you press it. |
 
 ## How painting works
@@ -98,7 +99,7 @@ Events: `input` (fires as each day is selected or cleared while drawing) and `ch
 
 Methods: `clear()`; on the book `next()` / `prev()` / `show(month)`; on the picker `open()` / `close()`.
 
-## The calculator: `<retro-calendar>` and `<retro-picker>`
+## The calculator: `<retro-calendar>`, `<retro-picker>` and `<retro-frame>`
 
 For when there must be exactly one date. Every day is a key on a retro desk calculator, and the keys interlock like the station buttons of an old radio: press one and it latches down, and whichever key was down springs back up. Press the key that is down a second time and it springs up too, clearing the date. There is no display: the lamp over the chosen day's column lights up instead (S M T W T F S, or 日 月 火 水 木 金 土 in Japanese), and in `<retro-picker>` the date appears in the field.
 
@@ -118,7 +119,22 @@ Modern retro, in the colours of a Japanese booking site: its sunflower yellow fo
 </script>
 ```
 
-Attributes, on both: `value` (one `YYYY-MM-DD`), `month`, `min`, `max`, `week-start`, `locale`, `theme`; the field also takes `placeholder` (shown, greyed, while nothing is chosen, instead of today's date). The calculator's size follows `--rc-width` (`22rem` on its own, `24rem` in the field; everything inside scales with it). Events: `change` with `detail: { value }` (null once cleared), `monthchange` with `detail: { month }`. Methods: on the calculator `clear()`, `next()`, `prev()`, `show(month)`, `setView('days' | 'months')`; on the field `open()`, `close()`, `toggle()`, `clear()`, and `calendar` for the calculator inside.
+Attributes, on both: `value` (one `YYYY-MM-DD`), `month`, `min`, `max`, `week-start`, `locale`, `theme`; the field also takes `placeholder` (shown, greyed, while nothing is chosen, instead of today's date). The calculator's size follows `--rc-width` (`22rem` on its own, `24rem` in the field; everything inside scales with it). Events: `change` with `detail: { value }` (null once cleared), `monthchange` with `detail: { month, reason }`, where `reason` says what turned it: `prev`, `next`, `today`, `pick` (a month key), `swipe`, `keyboard`, `value` (a date set from outside, in another month), `range` (a new `min` / `max`) or `api`. Methods: on the calculator `clear()`, `next()`, `prev()`, `show(month)`, `setView('days' | 'months')`; on the field `open()`, `close()`, `toggle()`, `clear()`, and `calendar` for the calculator inside.
+
+**Two months.** `<retro-calendar months="2">` shows two adjacent months in one body, each with its name over its weekday letters, under one pair of arrows and one Today key. A turn moves both; `month` is the first of the two; the one key that is down can be in either month, and the arrow keys walk across both (past the second month, the pair moves on by one). On a screen taller than it is wide (`innerHeight > innerWidth`, the same rule as `<highlighter-picker>`) the months sit one above the other at `--rc-width`; otherwise side by side, and the element is `1.948 × --rc-width` wide so the keys keep their size. The element's `data-layout` attribute says which (`stack` or `side`). One month, the default, is unchanged.
+
+**The frame.** `<retro-frame>` is the calculator's body, top row and month pad, around whatever you put inside it. It never draws days: it tells the page which month to show, and the page draws its own content for it.
+
+```html
+<retro-frame locale="ja-JP" min="today" max="+90">
+  <my-month-grid></my-month-grid>
+</retro-frame>
+<script>
+  document.querySelector('retro-frame').addEventListener('monthchange', (e) => drawMonth(e.detail.month)); // '2026-11'
+</script>
+```
+
+It fills the width it is given; its keys and print stay the size of a calculator `--rc-width` wide. Attributes: `month`, `min`, `max` (the arrows stop at them), `locale`, `theme`. Events: `monthchange` with `detail: { month, reason }` (`prev`, `next`, `today`, `pick`, `swipe`, `range` or `api`). Methods: `next()`, `prev()`, `show(month)`, `setView('days' | 'months')`. The content gives way to the twelve month keys while they are up. Both elements share one stylesheet and one base class (`src/retro-shell.ts`), so the frame always looks like the calculator.
 
 ## Running the demo
 
@@ -140,9 +156,11 @@ npm run build        # library build into dist/
 - `src/picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
 - `src/deck.ts`: the card-stack layout.
 - `src/range.ts`: `min` / `max` handling.
-- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`: the calculator (`<retro-calendar>`), its pure helpers (day layout, month pad, the date as the field writes it), and Apple's continuous (G2) corner paths.
+- `src/retro-shell.ts`: the calculator's body, top row, month pad and their look, shared by the calculator and the frame.
+- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`: the calculator (`<retro-calendar>`, one month or two), its pure helpers (day layout, month pad, the two-month layout, the date as the field writes it), and Apple's continuous (G2) corner paths.
+- `src/retro-frame.ts`: the frame around a page's own content (`<retro-frame>`).
 - `src/retro-picker.ts`: the date field the calculator slides out of (`<retro-picker>`).
-- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator, in its date field on a booking page.
+- `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator, in its date field on a booking page, with two months and the frame below.
 
 ## License
 

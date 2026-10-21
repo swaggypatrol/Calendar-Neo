@@ -3,6 +3,7 @@ import { HighlighterBook } from './book';
 import { HighlighterDeck } from './deck';
 import { HighlighterPicker } from './picker';
 import { RetroCalendar } from './retro';
+import { RetroFrame } from './retro-frame';
 import { RetroPicker } from './retro-picker';
 
 export { HighlighterCalendar, dateKey, type CalendarChangeDetail } from './calendar';
@@ -10,6 +11,8 @@ export { HighlighterBook } from './book';
 export { HighlighterDeck } from './deck';
 export { HighlighterPicker, toRanges } from './picker';
 export { RetroCalendar } from './retro';
+export { RetroFrame } from './retro-frame';
+export { RetroShell, type MonthChangeReason } from './retro-shell';
 export { RetroPicker } from './retro-picker';
 export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowLayout, type DayRect } from './engine';
 
@@ -41,6 +44,10 @@ if (typeof customElements !== 'undefined' && !customElements.get('highlighter-pi
 
 if (typeof customElements !== 'undefined' && !customElements.get('retro-calendar')) {
   customElements.define('retro-calendar', RetroCalendar);
+}
+
+if (typeof customElements !== 'undefined' && !customElements.get('retro-frame')) {
+  customElements.define('retro-frame', RetroFrame);
 }
 
 // The date field holds the calculator, so it comes after it

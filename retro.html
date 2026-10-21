@@ -19,6 +19,7 @@
           <li><b>Liquid glass.</b> The body is clear glass that blurs the page behind it and bends it near its rounded edge; the keys are frosted glass. The bending needs Chromium; elsewhere the glass only blurs. Every corner is Apple's continuous (G2) curve and every proportion golden.</li>
           <li><b>Keyboard</b>: Enter or the down arrow on the field opens it; arrow keys walk the days (into the next month at the edges), Page Up / Page Down turn the month, Space or Enter presses a key, Esc puts the days back or closes it.</li>
           <li>Days outside <code>min</code> / <code>max</code> are locked: the key gives only a hair. A small lamp marks today.</li>
+          <li>Further down: two months in one calculator, and the calculator's frame around a page's own content.</li>
         </ul>
       </section>
 
@@ -77,6 +78,18 @@
           <div class="guide"><div class="photo hakone"></div><div class="meta"><b>Mika</b><span>Hakone · hot springs and trails</span><em>$45 / hour</em></div></div>
           <div class="guide"><div class="photo osaka"></div><div class="meta"><b>Sota</b><span>Osaka · street food crawls</span><em>$35 / hour</em></div></div>
         </div>
+      </section>
+
+      <section class="more-cals">
+        <h2>Two months</h2>
+        <p>Set <code>months="2"</code> and the calculator shows two months in one body, under one pair of arrows and one Today key: a turn moves both, and the key that is down can be in either. On a screen taller than it is wide the months sit one above the other, otherwise side by side.</p>
+        <retro-calendar id="duo" months="2" locale="en-US" min="today"></retro-calendar>
+
+        <h2>A frame for your own page</h2>
+        <p><code>&lt;retro-frame&gt;</code> is the calculator's body and top row around whatever you put inside it. The arrows, Today and the month pad only tell the page which month to show (<code>monthchange</code>); what is inside is the page's own.</p>
+        <retro-frame id="frm" locale="en-US">
+          <div class="frame-days" id="frame-days"></div>
+        </retro-frame>
       </section>
 
       <section class="stage">

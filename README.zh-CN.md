@@ -16,7 +16,8 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 | `<highlighter-book>` | 一本打开的螺旋装订纸质日历：左右两页各一个月（竖着拿手机时是上下两页），纸张双面印刷，软软地卷起来翻页；在磨砂的日期上涂，捏着四周的哑光纸翻页。 |
 | `<highlighter-picker>` | 预订网站用的日期框：一个窄框，点开后长成纸质日历，并写出你选了哪些日子。 |
 | `<highlighter-deck>` | 早期的多月布局：一叠可以左右划的月份卡片。 |
-| `<retro-calendar>` | 反过来：一次只能选一天。液体玻璃做的复古计算器，每个日期是一颗磨砂玻璃按键。 |
+| `<retro-calendar>` | 反过来：一次只能选一天。液体玻璃做的复古计算器，每个日期是一颗磨砂玻璃按键。可以显示一个月，也可以两个月并排。 |
+| `<retro-frame>` | 计算器的机身和顶排（箭头、月份、Today、月份键盘），中间放你自己的内容。 |
 | `<retro-picker>` | 预订网站用的日期框，里面装着这台计算器：点一下日期框，计算器从框下面滑出来。 |
 
 ## 怎么涂
@@ -98,7 +99,7 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 
 方法：`clear()`；书有 `next()` / `prev()` / `show(month)`；日期框有 `open()` / `close()`。
 
-## 复古计算器：`<retro-calendar>` 和 `<retro-picker>`
+## 复古计算器：`<retro-calendar>`、`<retro-picker>` 和 `<retro-frame>`
 
 只要一个日期的时候用它。每一天都是复古计算器上的一颗按键，按键像老式收音机的互锁琴键：按下一颗，它就卡在下面；原来按下的那颗会弹起来。同一颗键再按一次，它也弹起来，日期就清掉了。没有显示屏：选中那天所在列顶上的星期字母会亮灯（英文是 S M T W T F S，日文是 日 月 火 水 木 金 土），放在 `<retro-picker>` 里时日期直接写进日期框。
 
@@ -118,7 +119,22 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 </script>
 ```
 
-两个元素共有的属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`；日期框另有 `placeholder`（没选日期时代替今天日期显示的灰字）。计算器的大小由 `--rc-width` 决定（单独用默认 `22rem`，在日期框里是 `24rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`，清掉时是 null）、`monthchange`（`detail: { month }`）。方法：计算器有 `clear()`、`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`；日期框有 `open()`、`close()`、`toggle()`、`clear()`，以及取到里面那台计算器的 `calendar`。
+两个元素共有的属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`；日期框另有 `placeholder`（没选日期时代替今天日期显示的灰字）。计算器的大小由 `--rc-width` 决定（单独用默认 `22rem`，在日期框里是 `24rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`，清掉时是 null）、`monthchange`（`detail: { month, reason }`，`reason` 说明月份为什么变：`prev`、`next`、`today`、`pick`（按了月份键）、`swipe`、`keyboard`、`value`（外面设了一个别的月份的日期）、`range`（`min` / `max` 变了）或 `api`）。方法：计算器有 `clear()`、`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`；日期框有 `open()`、`close()`、`toggle()`、`clear()`，以及取到里面那台计算器的 `calendar`。
+
+**两个月。** `<retro-calendar months="2">` 在一个机身里显示相邻的两个月，每个月的星期字母上面写着月份名，共用一对箭头和一个 Today 键。翻一次两个月一起动；`month` 是两个月里的第一个；按下的那一颗键可以在任意一个月里，方向键可以在两个月之间走（走出第二个月时，两个月一起往后挪一个月）。屏幕高大于宽时（`innerHeight > innerWidth`，和 `<highlighter-picker>` 同一条规则）两个月上下排，宽度是 `--rc-width`；否则左右并排，元素宽 `1.948 × --rc-width`，按键大小不变。元素上的 `data-layout` 属性写着当前是哪种（`stack` 或 `side`）。默认的单月完全不变。
+
+**外框。** `<retro-frame>` 是计算器的机身、顶排和月份键盘，中间放你自己的内容。它从不画日期格：只告诉页面该显示哪个月，内容由页面自己画。
+
+```html
+<retro-frame locale="ja-JP" min="today" max="+90">
+  <my-month-grid></my-month-grid>
+</retro-frame>
+<script>
+  document.querySelector('retro-frame').addEventListener('monthchange', (e) => drawMonth(e.detail.month)); // '2026-11'
+</script>
+```
+
+它撑满给它的宽度；按键和字的大小和一台 `--rc-width` 宽的计算器一样。属性：`month`、`min`、`max`（箭头翻到这里就停）、`locale`、`theme`。事件：`monthchange`（`detail: { month, reason }`，reason 是 `prev`、`next`、`today`、`pick`、`swipe`、`range` 或 `api`）。方法：`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`。月份键盘升起时中间的内容让开。两个元素共用一份样式和一个基类（`src/retro-shell.ts`），所以外框永远和计算器长得一样。
 
 ## 运行演示
 
@@ -140,9 +156,11 @@ npm run build        # 打包到 dist/
 - `src/picker.ts`：预订日期框（窄框、展开动画、日期段滚轮、手机上全屏打开）。
 - `src/deck.ts`：卡片叠放的布局。
 - `src/range.ts`：`min` / `max` 的处理。
-- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`：复古计算器（`<retro-calendar>`）、它的纯逻辑（日期排布、月份键盘、日期框里日期的写法），以及苹果 G2 连续圆角的路径。
+- `src/retro-shell.ts`：计算器的机身、顶排、月份键盘和它们的样式，计算器和外框共用。
+- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`：复古计算器（`<retro-calendar>`，一个月或两个月）、它的纯逻辑（日期排布、月份键盘、两个月的排法、日期框里日期的写法），以及苹果 G2 连续圆角的路径。
+- `src/retro-frame.ts`：包在页面自己内容外面的外框（`<retro-frame>`）。
 - `src/retro-picker.ts`：计算器从里面滑出来的日期框（`<retro-picker>`）。
-- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页；`retro.html` + `demo/retro.ts`：放在预订页面日期框里的复古计算器。
+- `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页；`retro.html` + `demo/retro.ts`：放在预订页面日期框里的复古计算器，下面还有两个月和外框的演示。
 
 ## 许可证
 

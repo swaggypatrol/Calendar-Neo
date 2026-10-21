@@ -172,3 +172,12 @@ retro-picker { display: block; }
   .fields { grid-template-columns: 1fr; }
   .guides-h, .guides { margin-left: 0; margin-right: 0; }
 }
+
+/* Two months, and the frame around a page's own grid of dates */
+.more-cals { margin: 0 0 32px; }
+.more-cals h2 { margin: 28px 0 8px; }
+.more-cals p { max-width: 70ch; }
+.more-cals retro-calendar, .more-cals retro-frame { margin-top: 16px; }
+.frame-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.frame-days span { min-height: 44px; padding: 4px 6px; border: 1px solid var(--field-line, rgba(127, 127, 127, 0.35)); border-radius: 8px; font-size: 0.9rem; }
+.frame-days span:empty { border-color: transparent; }

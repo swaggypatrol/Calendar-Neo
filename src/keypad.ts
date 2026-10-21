@@ -1,6 +1,6 @@
 /**
- * Pure helpers for <retro-calendar> and <retro-picker>: the 6 × 7 key layout of a month, the twelve keys of the month
- * pad, and how the date field prints a date. Kept free of the DOM so they can be unit tested.
+ * Pure helpers for <retro-calendar> and <retro-picker>: the 6 × 7 key layout of a month, how two months share the
+ * calculator, the twelve keys of the month pad, and how the date field prints a date. Kept free of the DOM so they can be unit tested.
  */
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -19,6 +19,24 @@ export function monthSlots(year: number, month0: number, weekStart = 0): (number
     const d = i - offset + 1;
     return d >= 1 && d <= days ? d : null;
   });
+}
+
+/**
+ * How two months share one calculator: one above the other on a screen taller than it is wide, side by side otherwise
+ * (the rule <highlighter-picker> lays its book out by).
+ */
+export function pairLayout(screenWidth: number, screenHeight: number): 'stack' | 'side' {
+  return screenHeight > screenWidth ? 'stack' : 'side';
+}
+
+/**
+ * The first month to show so that month k is on the board, moving as little as possible: unchanged when k is already
+ * one of the `shown` months starting at `first`, else k first (going back) or k last (going on).
+ */
+export function firstMonthShowing(k: number, first: number, shown: number): number {
+  if (k < first) return k;
+  if (k > first + shown - 1) return k - shown + 1;
+  return first;
 }
 
 /** One key of the month pad. Months are counted as year * 12 + month (0-based), as everywhere else here. */

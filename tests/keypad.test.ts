@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SLOTS, fieldDate, keyOf, monthKeys, monthSlots } from '../src/keypad';
+import { SLOTS, fieldDate, firstMonthShowing, keyOf, monthKeys, monthSlots, pairLayout } from '../src/keypad';
 
 describe('monthSlots', () => {
   it('lays October 2026 out from Sunday: the 1st is a Thursday', () => {
@@ -59,5 +59,26 @@ describe('fieldDate', () => {
   it('adds the year only when it is not this one', () => {
     expect(fieldDate('2027-01-05', 'en-US', now)).toBe('Jan 5, 2027');
     expect(fieldDate('2027-01-05', 'ja-JP', now)).toBe('2027年1月5日');
+  });
+});
+
+describe('two months', () => {
+  it('stand one above the other on a tall screen and side by side on a wide one, as the picker lays out its book', () => {
+    expect(pairLayout(390, 844)).toBe('stack');
+    expect(pairLayout(844, 390)).toBe('side');
+    expect(pairLayout(1440, 900)).toBe('side');
+    // A square screen is not taller than it is wide
+    expect(pairLayout(800, 800)).toBe('side');
+  });
+
+  it('move as little as possible to bring a month on: none when it is shown, back to it, or on to it as the last', () => {
+    const oct = 2026 * 12 + 9;
+    expect(firstMonthShowing(oct, oct, 2)).toBe(oct);
+    expect(firstMonthShowing(oct + 1, oct, 2)).toBe(oct);
+    expect(firstMonthShowing(oct + 2, oct, 2)).toBe(oct + 1);
+    expect(firstMonthShowing(oct - 1, oct, 2)).toBe(oct - 1);
+    // One month: the month itself, as before
+    expect(firstMonthShowing(oct + 1, oct, 1)).toBe(oct + 1);
+    expect(firstMonthShowing(oct - 3, oct, 1)).toBe(oct - 3);
   });
 });
