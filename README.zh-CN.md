@@ -119,9 +119,9 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 </script>
 ```
 
-两个元素共有的属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`；日期框另有 `placeholder`（没选日期时代替今天日期显示的灰字）。计算器的大小由 `--rc-width` 决定（单独用默认 `22rem`，在日期框里是 `24rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`，清掉时是 null）、`monthchange`（`detail: { month, reason }`，`reason` 说明月份为什么变：`prev`、`next`、`today`、`pick`（按了月份键）、`swipe`、`keyboard`、`value`（外面设了一个别的月份的日期）、`range`（`min` / `max` 变了）或 `api`）。方法：计算器有 `clear()`、`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`；日期框有 `open()`、`close()`、`toggle()`、`clear()`，以及取到里面那台计算器的 `calendar`。
+两个元素共有的属性：`value`（一个 `YYYY-MM-DD`）、`month`、`min`、`max`、`week-start`、`locale`、`theme`、`months`（`2` 是两个月，见下文）；日期框另有 `placeholder`（没选日期时代替今天日期显示的灰字）。计算器的大小由 `--rc-width` 决定（单独用默认 `22rem`，在日期框里是 `24rem`，里面的一切跟着缩放）。事件：`change`（`detail: { value }`，清掉时是 null）、`monthchange`（`detail: { month, reason }`，`reason` 说明月份为什么变：`prev`、`next`、`today`、`pick`（按了月份键）、`swipe`、`keyboard`、`value`（外面设了一个别的月份的日期）、`range`（`min` / `max` 变了）或 `api`）。方法：计算器有 `clear()`、`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`；日期框有 `open()`、`close()`、`toggle()`、`clear()`，以及取到里面那台计算器的 `calendar`。
 
-**两个月。** `<retro-calendar months="2">` 在一个机身里显示相邻的两个月，每个月的星期字母上面写着月份名，共用一对箭头和一个 Today 键。翻一次两个月一起动；`month` 是两个月里的第一个；按下的那一颗键可以在任意一个月里，方向键可以在两个月之间走（走出第二个月时，两个月一起往后挪一个月）。屏幕高大于宽时（`innerHeight > innerWidth`，和 `<highlighter-picker>` 同一条规则）两个月上下排，宽度是 `--rc-width`；否则左右并排，元素宽 `1.948 × --rc-width`，按键大小不变。元素上的 `data-layout` 属性写着当前是哪种（`stack` 或 `side`）。默认的单月完全不变。
+**两个月。** `<retro-calendar months="2">` 在一个机身里显示相邻的两个月，每个月的星期字母上面写着月份名，共用一对箭头和一个 Today 键。翻一次两个月一起动；`month` 是两个月里的第一个；按下的那一颗键可以在任意一个月里，方向键可以在两个月之间走（走出第二个月时，两个月一起往后挪一个月）。屏幕高大于宽时（`innerHeight > innerWidth`，和 `<highlighter-picker>` 同一条规则）两个月上下排，宽度是 `--rc-width`；否则左右并排，元素宽 `1.948 × --rc-width`，按键大小不变。元素上的 `data-layout` 属性写着当前是哪种（`stack` 或 `side`）。默认的单月完全不变。放在 `<retro-picker months="2">` 里时，日期框原来的规则照样生效：计算器只有比窗口还高或还宽时才缩小；放得下但会超出屏幕底部时，页面平滑往下滚出位置，而且不会把日期框滚出屏幕。
 
 **外框。** `<retro-frame>` 是计算器的机身、顶排和月份键盘，中间放你自己的内容。它从不画日期格：只告诉页面该显示哪个月，内容由页面自己画。
 

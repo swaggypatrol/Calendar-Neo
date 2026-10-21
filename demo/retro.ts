@@ -20,6 +20,7 @@ const calendars = [cal, duo];
 pick('min', 'min', (v) => calendars.forEach((c) => (v ? c.setAttribute('min', v) : c.removeAttribute('min'))));
 pick('lang', 'lang', (v) => [...calendars, frame].forEach((c) => c.setAttribute('locale', v)));
 pick('week', 'ws', (v) => calendars.forEach((c) => c.setAttribute('week-start', v)));
+pick('months', 'n', (v) => cal.setAttribute('months', v));
 
 const log = $('log');
 cal.addEventListener('change', (e) => {

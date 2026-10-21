@@ -108,7 +108,7 @@ const STYLE = /* css */ `
 retro-calendar { --rc-width: inherit; }
 `;
 
-const FORWARDED = ['value', 'month', 'min', 'max', 'week-start', 'locale', 'theme'];
+const FORWARDED = ['value', 'month', 'min', 'max', 'week-start', 'locale', 'theme', 'months'];
 
 /**
  * <retro-picker>: a booking site's date field with the calculator (<retro-calendar>) inside it.
@@ -116,7 +116,7 @@ const FORWARDED = ['value', 'month', 'min', 'max', 'week-start', 'locale', 'them
  * At rest it is a plain field showing today's date, greyed. Press it and the calculator slides out of it, a slab of
  * frosted glass that runs out from under the field and grows into the whole calculator while its keys rise row by row;
  * press it again, click outside or press Esc, and it all goes back in. The moment a key latches the field shows the date.
- * Attributes and events are the calendar's (change with detail: { value }, monthchange); also placeholder, and the
+ * Attributes and events are the calendar's (change with detail: { value }, monthchange; months="2" for two months); also placeholder, and the
  * methods open() / close() / toggle() / clear().
  */
 export class RetroPicker extends HTMLElement {
@@ -382,6 +382,8 @@ export class RetroPicker extends HTMLElement {
   /** As wide as it likes, but never wider than the window or taller than it (everything in it shrinks to match). */
   private size(): void {
     const p = this.$panel;
+    // (two months stand side by side or one above the other by the window's shape: set that first, then measure)
+    this.cal.layout();
     p.style.width = '';
     const w = p.offsetWidth;
     const h = p.offsetHeight;

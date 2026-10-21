@@ -120,7 +120,7 @@ export class RetroCalendar extends RetroShell {
   private pads = 1;
   private slots: SlotState[] = [];
   private focusIdx = -1;
-  private onScreen = () => this.applyLayout();
+  private onScreen = () => this.layout();
 
   constructor() {
     super(DAY_STYLE, DAYS_BLOCK);
@@ -219,7 +219,7 @@ export class RetroCalendar extends RetroShell {
     this.$shell.classList.toggle('duo', n > 1);
     if (n > 1 && this.isConnected) window.addEventListener('resize', this.onScreen);
     else window.removeEventListener('resize', this.onScreen);
-    this.applyLayout();
+    this.layout();
     // The second month's keys come up with the first; hidden ones stay down
     for (const k of this.keys.slice(SLOTS)) k.classList.toggle('stow', n < 2 || this._view !== 'days' || this.folded);
     if (this.rendered) {
@@ -228,8 +228,8 @@ export class RetroCalendar extends RetroShell {
     }
   }
 
-  /** One above the other on a screen taller than it is wide, side by side otherwise. */
-  private applyLayout(): void {
+  /** Two months: one above the other on a screen taller than it is wide, side by side otherwise (read from the window now). */
+  layout(): void {
     const side = this.pads > 1 && pairLayout(window.innerWidth, window.innerHeight) === 'side';
     this.$shell.classList.toggle('duo-side', side);
     this.$shell.classList.toggle('duo-stack', this.pads > 1 && !side);
@@ -306,10 +306,17 @@ export class RetroCalendar extends RetroShell {
 
   protected titleText(): string {
     if (this._view === 'months' || this.pads < 2) return super.titleText();
-    const fmt = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: 'long' });
     const a = new Date(Math.floor(this.monthIdx / 12), this.monthIdx % 12, 1);
+    // Short month names where the language has them (Oct, not 10月), so the range fits one month's width; each month's
+    // caption has the full name
+    const month = (style: 'short' | 'long', d: Date) => new Intl.DateTimeFormat(this.locale, { month: style }).format(d);
+    const style = /\d/.test(month('short', a)) ? 'long' : 'short';
+    const fmt = new Intl.DateTimeFormat(this.locale, { year: 'numeric', month: style });
     const b = new Date(Math.floor((this.monthIdx + 1) / 12), (this.monthIdx + 1) % 12, 1);
-    return typeof fmt.formatRange === 'function' ? fmt.formatRange(a, b) : `${fmt.format(a)} – ${fmt.format(b)}`;
+    const range = typeof fmt.formatRange === 'function' ? fmt.formatRange(a, b) : '';
+    // Where the language's range comes out as bare numbers (2026/10～2026/11 in Japanese), it is spelt out as one month is
+    if (/\p{L}/u.test(range)) return range;
+    return `${fmt.format(a)} – ${a.getFullYear() === b.getFullYear() ? month(style, b) : fmt.format(b)}`;
   }
 
   // ---------- Selection ----------
