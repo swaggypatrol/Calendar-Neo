@@ -34,7 +34,8 @@ const STYLE = /* css */ `
   position: relative;
   min-width: 12rem;
   vertical-align: middle;
-  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* The field's date; --rc-font and --rc-title-font also reach the calculator inside */
+  font-family: var(--rc-font, system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif);
   color: var(--rp-fg);
 }
 @media (prefers-color-scheme: dark) {

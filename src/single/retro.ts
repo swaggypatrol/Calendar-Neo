@@ -11,7 +11,7 @@ const DAY_STYLE = /* css */ `
   gap: var(--g);
   margin: calc(var(--g) * 1.618) 0 calc(var(--g) * 0.618);
   color: var(--print);
-  font-family: ${MINCHO};
+  font-family: var(--rc-title-font, ${MINCHO});
   font-size: calc(3.1 * var(--u));
   font-weight: 600;
   line-height: 1;
@@ -64,7 +64,7 @@ const DAY_STYLE = /* css */ `
   display: block;
   margin: calc(var(--g) * 1.618) 0 0;
   color: var(--legend);
-  font-family: ${MINCHO};
+  font-family: var(--rc-title-font, ${MINCHO});
   font-size: calc(3.4 * var(--u));
   font-weight: 600;
   letter-spacing: 0.08em;

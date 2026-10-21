@@ -48,6 +48,7 @@ export const WORDS: Record<string, Words> = {
   },
 };
 
+/** The Mincho of the month at the top, the weekday letters and each month's name over two months; --rc-title-font sets another. */
 export const MINCHO = `"Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", "Songti SC", serif`;
 
 /** The calculator's look, shared by <retro-calendar> and <retro-frame>: the one source of it. */
@@ -60,7 +61,8 @@ export const SHELL_STYLE = /* css */ `
   /* Everything is measured off the calculator's own width */
   container-type: inline-size;
   -webkit-tap-highlight-color: transparent;
-  font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* Every word but the Mincho ones (--rc-title-font): the day numbers, Today, the month keys, a frame's content */
+  font-family: var(--rc-font, system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "PingFang SC", "Microsoft YaHei", sans-serif);
 
   /* The house colours of a travel site in Japan: a warm sunflower yellow for what is chosen, near-black ink, and clear
      glass for everything else */
@@ -221,7 +223,7 @@ export const SHELL_STYLE = /* css */ `
   justify-content: center;
   gap: calc(0.9 * var(--u));
   white-space: nowrap;
-  font-family: ${MINCHO};
+  font-family: var(--rc-title-font, ${MINCHO});
   font-size: calc(3.9 * var(--u));
   font-weight: 600;
   letter-spacing: 0.08em;
