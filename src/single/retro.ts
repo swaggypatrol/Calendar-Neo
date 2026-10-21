@@ -1,4 +1,4 @@
-import { monthIndexOf } from './range';
+import { monthIndexOf } from '../shared/range';
 import { SLOTS, firstMonthShowing, keyOf, monthSlots, pairLayout } from './keypad';
 import { MINCHO, RetroShell } from './retro-shell';
 

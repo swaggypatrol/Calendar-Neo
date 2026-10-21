@@ -1,5 +1,5 @@
-import '../src/index';
-import type { RetroCalendar, RetroFrame, RetroPicker } from '../src/index';
+import '../src/single';
+import type { RetroCalendar, RetroFrame, RetroPicker } from '../src/single';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cal = $('cal') as RetroPicker;

@@ -1,0 +1,41 @@
+/**
+ * Multiple dates: the highlighter. <highlighter-calendar> (the month you paint), <highlighter-book> (the paper
+ * calendar), <highlighter-deck> (the card stack) and <highlighter-picker> (the booking field). Importing this entry
+ * registers all four and needs nothing from the single-date half.
+ */
+import { HighlighterCalendar } from './calendar';
+import { HighlighterBook } from './book';
+import { HighlighterDeck } from './deck';
+import { HighlighterPicker } from './picker';
+
+export { HighlighterCalendar, dateKey, type CalendarChangeDetail } from './calendar';
+export { HighlighterBook } from './book';
+export { HighlighterDeck } from './deck';
+export { HighlighterPicker, toRanges } from './picker';
+export { HighlighterEngine, GRID, CELLS, DEFAULT_THRESHOLD, type Tool, type RowLayout, type DayRect } from './engine';
+
+let baseDefined = false;
+
+/** Register the custom element (default name highlighter-calendar); safe to call more than once. */
+export function defineHighlighterCalendar(tag = 'highlighter-calendar'): void {
+  if (typeof customElements !== 'undefined' && !customElements.get(tag)) {
+    // A class can only be registered once, so registering under another name uses a subclass
+    customElements.define(tag, baseDefined ? class extends HighlighterCalendar {} : HighlighterCalendar);
+    baseDefined = true;
+  }
+}
+
+defineHighlighterCalendar();
+
+if (typeof customElements !== 'undefined' && !customElements.get('highlighter-deck')) {
+  customElements.define('highlighter-deck', HighlighterDeck);
+}
+
+// The date picker uses the book, so register the book first
+if (typeof customElements !== 'undefined' && !customElements.get('highlighter-book')) {
+  customElements.define('highlighter-book', HighlighterBook);
+}
+
+if (typeof customElements !== 'undefined' && !customElements.get('highlighter-picker')) {
+  customElements.define('highlighter-picker', HighlighterPicker);
+}

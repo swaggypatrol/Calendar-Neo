@@ -1,6 +1,6 @@
 import type { HighlighterCalendar } from './calendar';
 import type { Tool } from './engine';
-import { DayRange } from './range';
+import { DayRange } from '../shared/range';
 
 /** On release, turn the page if it has gone this far, otherwise fall back; a fast enough flick also counts. */
 const COMMIT = 0.3;

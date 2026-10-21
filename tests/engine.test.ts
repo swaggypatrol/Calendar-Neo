@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CELLS, HOLD, HighlighterEngine, type RowLayout } from '../src/engine';
+import { CELLS, HOLD, HighlighterEngine, type RowLayout } from '../src/multi/engine';
 
 const W = 48;
 const H = 42;

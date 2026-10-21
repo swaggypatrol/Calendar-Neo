@@ -1,6 +1,6 @@
-import { DayRange } from './range';
+import { DayRange } from '../shared/range';
 import { monthKeys } from './keypad';
-import { roundedRect } from './g2';
+import { roundedRect } from '../shared/g2';
 
 /* ---------- Words on the faceplate, in the reader's language ---------- */
 

@@ -1,5 +1,5 @@
-import '../src/index';
-import type { CalendarChangeDetail } from '../src/index';
+import '../src/multi';
+import type { CalendarChangeDetail } from '../src/multi';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cal = document.querySelector('highlighter-deck')!;

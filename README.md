@@ -10,12 +10,28 @@ The result is simply a list of dates, so continuous ranges, several ranges and s
 
 ## Components
 
+The package has two halves that share only the date-range rules and the corner geometry. Each half has its own entry, so a page that needs one never loads the other:
+
+| Half | Entry | Elements |
+| --- | --- | --- |
+| **Multiple dates: the highlighter** | `calendar-neo/multi` (`src/multi/`) | `<highlighter-calendar>`, `<highlighter-book>`, `<highlighter-picker>`, `<highlighter-deck>` |
+| **Single date: the calculator** | `calendar-neo/single` (`src/single/`) | `<retro-calendar>`, `<retro-frame>`, `<retro-picker>` |
+
+`calendar-neo` itself loads both.
+
+### Multiple dates: the highlighter
+
 | Element | What it is |
 | --- | --- |
 | `<highlighter-calendar>` | One month you can paint on. The core of everything else. |
 | `<highlighter-book>` | An open spiral-bound paper calendar: two months side by side (one above the other on a phone held upright), pages printed on both sides, turned with a soft page curl; you highlight on the frosted days and turn pages by the matte paper round them. |
 | `<highlighter-picker>` | A booking-style date field. A narrow pill that grows into the paper calendar and summarises what you picked. |
 | `<highlighter-deck>` | An earlier multi-month layout: a stack of month cards you swipe through. |
+
+### Single date: the calculator
+
+| Element | What it is |
+| --- | --- |
 | `<retro-calendar>` | The opposite: exactly one date, picked on the frosted-glass keys of a retro calculator made of liquid glass. One month, or two side by side. |
 | `<retro-frame>` | The calculator's body and top row (arrows, month, Today, the month pad) around content of your own. |
 | `<retro-picker>` | A booking-style date field holding the calculator, which slides out from under the field when you press it. |
@@ -64,6 +80,12 @@ Add `min="today"` (and optionally `max`) for customer bookings. Days outside the
 `min` / `max` accept `today`, `tomorrow`, `+N` (N days from today) or `YYYY-MM-DD`. Relative values are re-evaluated whenever the calendar redraws. Selected dates that fall outside the range are removed and a `change` event fires.
 
 ## Usage
+
+```js
+import 'calendar-neo';        // both halves
+import 'calendar-neo/single'; // only the calculator: <retro-calendar>, <retro-frame>, <retro-picker>
+import 'calendar-neo/multi';  // only the highlighter: <highlighter-calendar>, <highlighter-book>, <highlighter-picker>, <highlighter-deck>
+```
 
 ```html
 <script type="module" src="highlighter-calendar.js"></script>
@@ -134,7 +156,7 @@ Attributes, on both: `value` (one `YYYY-MM-DD`), `month`, `min`, `max`, `week-st
 </script>
 ```
 
-It fills the width it is given; its keys and print stay the size of a calculator `--rc-width` wide. Attributes: `month`, `min`, `max` (the arrows stop at them), `locale`, `theme`. Events: `monthchange` with `detail: { month, reason }` (`prev`, `next`, `today`, `pick`, `swipe`, `range` or `api`). Methods: `next()`, `prev()`, `show(month)`, `setView('days' | 'months')`. The content gives way to the twelve month keys while they are up. Both elements share one stylesheet and one base class (`src/retro-shell.ts`), so the frame always looks like the calculator.
+It fills the width it is given; its keys and print stay the size of a calculator `--rc-width` wide. Attributes: `month`, `min`, `max` (the arrows stop at them), `locale`, `theme`. Events: `monthchange` with `detail: { month, reason }` (`prev`, `next`, `today`, `pick`, `swipe`, `range` or `api`). Methods: `next()`, `prev()`, `show(month)`, `setView('days' | 'months')`. The content gives way to the twelve month keys while they are up. Both elements share one stylesheet and one base class (`src/single/retro-shell.ts`), so the frame always looks like the calculator.
 
 ## Running the demo
 
@@ -144,22 +166,25 @@ npm run dev          # http://localhost:5173 (the sun / moon button switches day
 npm run dev:booking  # future-only demo: http://localhost:5173/booking.html
                      # the calculator: http://localhost:5173/retro.html
 npm test             # unit tests for the selection logic
-npm run build        # library build into dist/
+npm run build        # library build into dist/ (everything, and each half on its own)
 ```
 
 ## Project layout
 
-- `src/engine.ts`: selection logic (8×8 cells, threshold, hold-to-bleed, eraser). No DOM, unit tested.
-- `src/ink.ts`: the highlighter look (bristles, streaks, layering, fading, settling into the band, auto-completed strokes).
-- `src/calendar.ts`: the `<highlighter-calendar>` element, wiring the two to pointer, keyboard and the month grid.
-- `src/book.ts`: the paper calendar (two pages, spiral binding, page curl, bookmarks, upright layout).
-- `src/picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
-- `src/deck.ts`: the card-stack layout.
-- `src/range.ts`: `min` / `max` handling.
-- `src/retro-shell.ts`: the calculator's body, top row, month pad and their look, shared by the calculator and the frame.
-- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`: the calculator (`<retro-calendar>`, one month or two), its pure helpers (day layout, month pad, the two-month layout, the date as the field writes it), and Apple's continuous (G2) corner paths.
-- `src/retro-frame.ts`: the frame around a page's own content (`<retro-frame>`).
-- `src/retro-picker.ts`: the date field the calculator slides out of (`<retro-picker>`).
+- `src/index.ts`: everything (both halves).
+- `src/multi/`: **multiple dates, the highlighter**; `index.ts` is its entry (`calendar-neo/multi`).
+  - `engine.ts`: selection logic (8×8 cells, threshold, hold-to-bleed, eraser). No DOM, unit tested.
+  - `ink.ts`: the highlighter look (bristles, streaks, layering, fading, settling into the band, auto-completed strokes).
+  - `calendar.ts`: the `<highlighter-calendar>` element, wiring the two to pointer, keyboard and the month grid.
+  - `book.ts`: the paper calendar (two pages, spiral binding, page curl, bookmarks, upright layout).
+  - `picker.ts`: the booking field (pill, grow animation, range wheel, full screen on a phone).
+  - `deck.ts`: the card-stack layout.
+- `src/single/`: **a single date, the calculator**; `index.ts` is its entry (`calendar-neo/single`).
+  - `retro-shell.ts`: the calculator's body, top row, month pad and their look, shared by the calculator and the frame.
+  - `retro.ts` + `keypad.ts`: the calculator (`<retro-calendar>`, one month or two) and its pure helpers (day layout, month pad, the two-month layout, the date as the field writes it).
+  - `retro-frame.ts`: the frame around a page's own content (`<retro-frame>`).
+  - `retro-picker.ts`: the date field the calculator slides out of (`<retro-picker>`).
+- `src/shared/`: what both halves use: `range.ts` (`min` / `max` handling) and `g2.ts` (Apple's continuous (G2) corner paths).
 - `index.html` + `demo/`: demo page; `booking.html` + `demo/booking.ts`: future-only demo; `retro.html` + `demo/retro.ts`: the calculator, in its date field on a booking page, with two months and the frame below.
 
 ## License

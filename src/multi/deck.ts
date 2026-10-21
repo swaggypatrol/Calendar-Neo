@@ -1,6 +1,6 @@
 import type { HighlighterCalendar } from './calendar';
 import type { Tool } from './engine';
-import { DayRange } from './range';
+import { DayRange } from '../shared/range';
 
 /** Offset at which each card in a pile peeks out. */
 const STACK_DX = 1.2;

@@ -1,6 +1,6 @@
 import { DEFAULT_THRESHOLD, HighlighterEngine, type DayRect, type FlipEvent, type RowLayout, type Tool } from './engine';
 import { InkCanvas, type Run } from './ink';
-import { DayRange } from './range';
+import { DayRange } from '../shared/range';
 
 export interface CalendarChangeDetail {
   /** All selected dates, YYYY-MM-DD, ascending. */

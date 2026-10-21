@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SLOTS, fieldDate, firstMonthShowing, keyOf, monthKeys, monthSlots, pairLayout } from '../src/keypad';
+import { SLOTS, fieldDate, firstMonthShowing, keyOf, monthKeys, monthSlots, pairLayout } from '../src/single/keypad';
 
 describe('monthSlots', () => {
   it('lays October 2026 out from Sunday: the 1st is a Thursday', () => {

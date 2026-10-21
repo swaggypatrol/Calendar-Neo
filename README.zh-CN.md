@@ -10,12 +10,28 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 
 ## 组件
 
+整个包分成两块，只共用日期范围的规则和圆角的几何算法。每块有自己的入口，页面只用一块时不会加载另一块：
+
+| 哪一块 | 入口 | 元素 |
+| --- | --- | --- |
+| **多日：荧光笔** | `calendar-neo/multi`（`src/multi/`） | `<highlighter-calendar>`、`<highlighter-book>`、`<highlighter-picker>`、`<highlighter-deck>` |
+| **单日：计算器** | `calendar-neo/single`（`src/single/`） | `<retro-calendar>`、`<retro-frame>`、`<retro-picker>` |
+
+`calendar-neo` 本身两块都加载。
+
+### 多日：荧光笔
+
 | 元素 | 是什么 |
 | --- | --- |
 | `<highlighter-calendar>` | 一个可以涂选的月份，其它组件都建立在它上面。 |
 | `<highlighter-book>` | 一本打开的螺旋装订纸质日历：左右两页各一个月（竖着拿手机时是上下两页），纸张双面印刷，软软地卷起来翻页；在磨砂的日期上涂，捏着四周的哑光纸翻页。 |
 | `<highlighter-picker>` | 预订网站用的日期框：一个窄框，点开后长成纸质日历，并写出你选了哪些日子。 |
 | `<highlighter-deck>` | 早期的多月布局：一叠可以左右划的月份卡片。 |
+
+### 单日：计算器
+
+| 元素 | 是什么 |
+| --- | --- |
 | `<retro-calendar>` | 反过来：一次只能选一天。液体玻璃做的复古计算器，每个日期是一颗磨砂玻璃按键。可以显示一个月，也可以两个月并排。 |
 | `<retro-frame>` | 计算器的机身和顶排（箭头、月份、Today、月份键盘），中间放你自己的内容。 |
 | `<retro-picker>` | 预订网站用的日期框，里面装着这台计算器：点一下日期框，计算器从框下面滑出来。 |
@@ -64,6 +80,12 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 `min` / `max` 可以写 `today`、`tomorrow`、`+N`（N 天后）或 `YYYY-MM-DD`。相对写法每次重画时按当天日期重新换算。范围外的已选日期会被去掉，并触发 `change`。
 
 ## 用法
+
+```js
+import 'calendar-neo';        // 两块都要
+import 'calendar-neo/single'; // 只要计算器：<retro-calendar>、<retro-frame>、<retro-picker>
+import 'calendar-neo/multi';  // 只要荧光笔：<highlighter-calendar>、<highlighter-book>、<highlighter-picker>、<highlighter-deck>
+```
 
 ```html
 <script type="module" src="highlighter-calendar.js"></script>
@@ -134,7 +156,7 @@ Calendar Neo 是一组不依赖任何框架的 Web Component。不用再点起�
 </script>
 ```
 
-它撑满给它的宽度；按键和字的大小和一台 `--rc-width` 宽的计算器一样。属性：`month`、`min`、`max`（箭头翻到这里就停）、`locale`、`theme`。事件：`monthchange`（`detail: { month, reason }`，reason 是 `prev`、`next`、`today`、`pick`、`swipe`、`range` 或 `api`）。方法：`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`。月份键盘升起时中间的内容让开。两个元素共用一份样式和一个基类（`src/retro-shell.ts`），所以外框永远和计算器长得一样。
+它撑满给它的宽度；按键和字的大小和一台 `--rc-width` 宽的计算器一样。属性：`month`、`min`、`max`（箭头翻到这里就停）、`locale`、`theme`。事件：`monthchange`（`detail: { month, reason }`，reason 是 `prev`、`next`、`today`、`pick`、`swipe`、`range` 或 `api`）。方法：`next()`、`prev()`、`show(month)`、`setView('days' | 'months')`。月份键盘升起时中间的内容让开。两个元素共用一份样式和一个基类（`src/single/retro-shell.ts`），所以外框永远和计算器长得一样。
 
 ## 运行演示
 
@@ -144,22 +166,25 @@ npm run dev          # 打开 http://localhost:5173（右上角的太阳 / 月�
 npm run dev:booking  # 只选未来的演示：http://localhost:5173/booking.html
                      # 复古计算器：http://localhost:5173/retro.html
 npm test             # 选择逻辑的单元测试
-npm run build        # 打包到 dist/
+npm run build        # 打包到 dist/（全部，以及单日、多日各自一份）
 ```
 
 ## 代码结构
 
-- `src/engine.ts`：选择逻辑（8×8 小格、阈值、长按扩散、橡皮擦），不依赖 DOM，有单元测试。
-- `src/ink.ts`：荧光笔的样子（刷毛、拉丝、叠加变深、淡出、松笔落带、自动补笔）。
-- `src/calendar.ts`：`<highlighter-calendar>` 元素，把前两者接到指针、键盘和月份网格上。
-- `src/book.ts`：纸质日历（两页、螺旋装订、卷页翻页、书签、竖版布局）。
-- `src/picker.ts`：预订日期框（窄框、展开动画、日期段滚轮、手机上全屏打开）。
-- `src/deck.ts`：卡片叠放的布局。
-- `src/range.ts`：`min` / `max` 的处理。
-- `src/retro-shell.ts`：计算器的机身、顶排、月份键盘和它们的样式，计算器和外框共用。
-- `src/retro.ts` + `src/keypad.ts` + `src/g2.ts`：复古计算器（`<retro-calendar>`，一个月或两个月）、它的纯逻辑（日期排布、月份键盘、两个月的排法、日期框里日期的写法），以及苹果 G2 连续圆角的路径。
-- `src/retro-frame.ts`：包在页面自己内容外面的外框（`<retro-frame>`）。
-- `src/retro-picker.ts`：计算器从里面滑出来的日期框（`<retro-picker>`）。
+- `src/index.ts`：全部（两块都有）。
+- `src/multi/`：**多日，荧光笔**；`index.ts` 是它的入口（`calendar-neo/multi`）。
+  - `engine.ts`：选择逻辑（8×8 小格、阈值、长按扩散、橡皮擦），不依赖 DOM，有单元测试。
+  - `ink.ts`：荧光笔的样子（刷毛、拉丝、叠加变深、淡出、松笔落带、自动补笔）。
+  - `calendar.ts`：`<highlighter-calendar>` 元素，把前两者接到指针、键盘和月份网格上。
+  - `book.ts`：纸质日历（两页、螺旋装订、卷页翻页、书签、竖版布局）。
+  - `picker.ts`：预订日期框（窄框、展开动画、日期段滚轮、手机上全屏打开）。
+  - `deck.ts`：卡片叠放的布局。
+- `src/single/`：**单日，计算器**；`index.ts` 是它的入口（`calendar-neo/single`）。
+  - `retro-shell.ts`：计算器的机身、顶排、月份键盘和它们的样式，计算器和外框共用。
+  - `retro.ts` + `keypad.ts`：复古计算器（`<retro-calendar>`，一个月或两个月）和它的纯逻辑（日期排布、月份键盘、两个月的排法、日期框里日期的写法）。
+  - `retro-frame.ts`：包在页面自己内容外面的外框（`<retro-frame>`）。
+  - `retro-picker.ts`：计算器从里面滑出来的日期框（`<retro-picker>`）。
+- `src/shared/`：两块都用的部分：`range.ts`（`min` / `max` 的处理）和 `g2.ts`（苹果 G2 连续圆角的路径）。
 - `index.html` + `demo/`：演示页；`booking.html` + `demo/booking.ts`：只选未来的演示页；`retro.html` + `demo/retro.ts`：放在预订页面日期框里的复古计算器，下面还有两个月和外框的演示。
 
 ## 许可证

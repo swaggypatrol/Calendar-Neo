@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HighlighterEngine, type RowLayout } from '../src/engine';
-import { DayRange, resolveDay } from '../src/range';
+import { HighlighterEngine, type RowLayout } from '../src/multi/engine';
+import { DayRange, resolveDay } from '../src/shared/range';
 
 const W = 48;
 const H = 42;

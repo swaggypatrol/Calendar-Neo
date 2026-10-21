@@ -23,6 +23,14 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/highlighter-calendar.js",
       "require": "./dist/highlighter-calendar.umd.cjs"
+    },
+    "./single": {
+      "types": "./dist/types/single/index.d.ts",
+      "import": "./dist/single.js"
+    },
+    "./multi": {
+      "types": "./dist/types/multi/index.d.ts",
+      "import": "./dist/multi.js"
     }
   },
   "files": [
@@ -31,7 +39,7 @@
   "scripts": {
     "dev": "vite",
     "dev:booking": "vite --open /booking.html",
-    "build": "tsc --noEmit && vite build && tsc -p tsconfig.build.json",
+    "build": "tsc --noEmit && vite build && vite build --mode parts && tsc -p tsconfig.build.json",
     "build:demo": "vite build --mode demo",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
